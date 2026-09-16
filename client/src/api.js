@@ -1,6 +1,5 @@
-// Hardcoded fallback so this works even if the VITE_API_BASE_URL build-time env var
-// never gets applied on Vercel. Override via that env var if the API's URL changes.
-export const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://qr-generation-ag74.onrender.com";
+// Hardcoded on purpose -- no env var here. If the API's URL ever changes, update this directly.
+export const API_BASE = "https://qr-generation-ag74.onrender.com";
 
 async function request(path, options = {}) {
   const res = await fetch(`${API_BASE}/api${path}`, {
