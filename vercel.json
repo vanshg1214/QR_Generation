@@ -2,5 +2,12 @@
   "framework": null,
   "installCommand": "npm install",
   "buildCommand": "npm run build",
-  "outputDirectory": "client/dist"
+  "outputDirectory": "client/dist",
+  "redirects": [
+    {
+      "source": "/r/:code",
+      "destination": "https://qr-generation-ag74.onrender.com/r/:code",
+      "permanent": false
+    }
+  ]
 }
