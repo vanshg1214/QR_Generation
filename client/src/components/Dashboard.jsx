@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api } from "../api.js";
+import { api, API_BASE } from "../api.js";
 import SettingsPanel from "./SettingsPanel.jsx";
 import UploadPanel from "./UploadPanel.jsx";
 import PeopleTable from "./PeopleTable.jsx";
@@ -62,8 +62,8 @@ export default function Dashboard({ onLoggedOut }) {
       <section className="card export-card">
         <h2>Export</h2>
         <div className="button-row">
-          <a className="button-link" href="/api/export.xlsx">Export Excel (.xlsx)</a>
-          <a className="button-link" href="/api/export.csv">Export CSV</a>
+          <a className="button-link" href={`${API_BASE}/api/export.xlsx`}>Export Excel (.xlsx)</a>
+          <a className="button-link" href={`${API_BASE}/api/export.csv`}>Export CSV</a>
           <button className="secondary" onClick={refresh} disabled={loading}>
             {loading ? "Refreshing…" : "Refresh"}
           </button>

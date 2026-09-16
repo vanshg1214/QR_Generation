@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import session from "express-session";
+import cors from "cors";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -17,7 +18,27 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 app.set("trust proxy", 1);
+
+// FRONTEND_ORIGIN: comma-separated list of origins allowed to call this API from a browser
+// (needed when the dashboard is deployed separately from this server, e.g. on Vercel).
+// Leave unset when the dashboard is served by this same server — no cross-origin calls to allow.
+const allowedOrigins = (process.env.FRONTEND_ORIGIN || "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+if (allowedOrigins.length) {
+  app.use(
+    cors({
+      origin: allowedOrigins,
+      credentials: true,
+    })
+  );
+}
+
 app.use(express.json());
+
+const isProduction = process.env.NODE_ENV === "production";
 
 app.use(
   session({
@@ -27,8 +48,10 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      // Cross-site (dashboard on a different domain than this API) requires
+      // SameSite=None, which browsers only honor on Secure (HTTPS) cookies.
+      sameSite: allowedOrigins.length ? "none" : "lax",
+      secure: isProduction || allowedOrigins.length > 0,
       maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
     },
   })

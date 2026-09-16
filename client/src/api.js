@@ -1,6 +1,10 @@
+// Empty string when the dashboard is served by the same server as the API (Render alone).
+// Set to the API's own URL when the dashboard is deployed separately (e.g. on Vercel).
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
+
 async function request(path, options = {}) {
-  const res = await fetch(`/api${path}`, {
-    credentials: "same-origin",
+  const res = await fetch(`${API_BASE}/api${path}`, {
+    credentials: "include",
     headers: options.body ? { "Content-Type": "application/json" } : undefined,
     ...options,
   });
@@ -32,9 +36,9 @@ export const api = {
   async uploadSheet(file) {
     const formData = new FormData();
     formData.append("file", file);
-    const res = await fetch("/api/upload", {
+    const res = await fetch(`${API_BASE}/api/upload`, {
       method: "POST",
-      credentials: "same-origin",
+      credentials: "include",
       body: formData,
     });
     if (!res.ok) {
