@@ -1,10 +1,8 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 
 function formatDate(value) {
   if (!value) return "—";
-  // SQLite stores UTC "YYYY-MM-DD HH:MM:SS"; make it parseable and show local time.
-  const iso = value.includes("T") ? value : value.replace(" ", "T") + "Z";
-  const d = new Date(iso);
+  const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
   return d.toLocaleString();
 }
@@ -13,6 +11,7 @@ export default function PeopleTable({ people }) {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
+  const [expandedId, setExpandedId] = useState(null);
 
   const extraColumns = useMemo(() => {
     const keys = new Set();
@@ -59,6 +58,8 @@ export default function PeopleTable({ people }) {
     }
   }
 
+  const columnCount = extraColumns.length + 5;
+
   return (
     <section className="card">
       <div className="table-header">
@@ -74,6 +75,7 @@ export default function PeopleTable({ people }) {
         <table>
           <thead>
             <tr>
+              <th></th>
               <th onClick={() => toggleSort("name")} className="sortable">Name</th>
               {extraColumns.map((col) => (
                 <th key={col} onClick={() => toggleSort(col)} className="sortable">
@@ -86,25 +88,53 @@ export default function PeopleTable({ people }) {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((p) => (
-              <tr key={p.id}>
-                <td>{p.name}</td>
-                {extraColumns.map((col) => (
-                  <td key={col}>{p.details[col] ?? ""}</td>
-                ))}
-                <td>
-                  <span className={p.viewed ? "badge badge-yes" : "badge badge-no"}>
-                    {p.viewed ? "Yes" : "No"}
-                  </span>
-                </td>
-                <td>{p.scanCount}</td>
-                <td>{formatDate(p.lastScannedAt)}</td>
-              </tr>
-            ))}
+            {filtered.map((p) => {
+              const isExpanded = expandedId === p.id;
+              return (
+                <Fragment key={p.id}>
+                  <tr
+                    className="clickable-row"
+                    onClick={() => setExpandedId(isExpanded ? null : p.id)}
+                  >
+                    <td className="expand-toggle">{isExpanded ? "▾" : "▸"}</td>
+                    <td>{p.name}</td>
+                    {extraColumns.map((col) => (
+                      <td key={col}>{p.details[col] ?? ""}</td>
+                    ))}
+                    <td>
+                      <span className={p.viewed ? "badge badge-yes" : "badge badge-no"}>
+                        {p.viewed ? "Yes" : "No"}
+                      </span>
+                    </td>
+                    <td>{p.scanCount}</td>
+                    <td>{formatDate(p.lastScannedAt)}</td>
+                  </tr>
+                  {isExpanded && (
+                    <tr className="scan-history-row">
+                      <td></td>
+                      <td colSpan={columnCount - 1}>
+                        {p.scans && p.scans.length ? (
+                          <div className="scan-history">
+                            <strong>Scan history for {p.name}:</strong>
+                            <ul>
+                              {[...p.scans].reverse().map((scannedAt, idx) => (
+                                <li key={idx}>{formatDate(scannedAt)}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : (
+                          <span className="muted">Not scanned yet.</span>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={extraColumns.length + 4} className="muted">
-                  No people yet — upload an Excel sheet above.
+                <td colSpan={columnCount} className="muted">
+                  No people yet — create a campaign above.
                 </td>
               </tr>
             )}

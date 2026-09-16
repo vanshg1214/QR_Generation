@@ -8,10 +8,9 @@ import { fileURLToPath } from "node:url";
 
 import { authRoutes } from "./routes/authRoutes.js";
 import { redirectRoutes } from "./routes/redirect.js";
-import { dashboardRoutes } from "./routes/dashboard.js";
+import { campaignRoutes } from "./routes/campaigns.js";
 import { uploadRoutes } from "./routes/upload.js";
 import { exportRoutes } from "./routes/export.js";
-import { settingsRoutes } from "./routes/settings.js";
 import { initSchema } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -62,10 +61,9 @@ app.use(redirectRoutes);
 
 // Everything else the dashboard needs, all password-protected except /api/login and /api/session.
 app.use("/api", authRoutes);
-app.use("/api", dashboardRoutes);
+app.use("/api", campaignRoutes);
 app.use("/api", uploadRoutes);
 app.use("/api", exportRoutes);
-app.use("/api", settingsRoutes);
 
 // Serve the built React dashboard in production.
 const clientDist = path.join(__dirname, "..", "..", "client", "dist");

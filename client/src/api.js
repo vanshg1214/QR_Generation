@@ -26,14 +26,15 @@ export const api = {
     request("/login", { method: "POST", body: JSON.stringify({ password }) }).then((r) => r.json()),
   logout: () => request("/logout", { method: "POST" }).then((r) => r.json()),
 
-  getPeople: () => request("/people").then((r) => r.json()),
+  getCampaigns: () => request("/campaigns").then((r) => r.json()),
+  getCampaign: (id) => request(`/campaigns/${id}`).then((r) => r.json()),
+  updateCampaign: (id, fields) =>
+    request(`/campaigns/${id}`, { method: "PATCH", body: JSON.stringify(fields) }).then((r) => r.json()),
 
-  getSettings: () => request("/settings").then((r) => r.json()),
-  saveSettings: (destinationUrl) =>
-    request("/settings", { method: "POST", body: JSON.stringify({ destinationUrl }) }).then((r) => r.json()),
-
-  async uploadSheet(file) {
+  async createCampaign({ campaignName, destinationUrl, file }) {
     const formData = new FormData();
+    formData.append("campaignName", campaignName);
+    formData.append("destinationUrl", destinationUrl);
     formData.append("file", file);
     const res = await fetch(`${API_BASE}/api/upload`, {
       method: "POST",

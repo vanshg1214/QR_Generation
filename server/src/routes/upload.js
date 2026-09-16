@@ -36,6 +36,14 @@ uploadRoutes.post("/upload", requireAuth, upload.single("file"), async (req, res
     return res.status(400).json({ error: "No file uploaded" });
   }
 
+  const { campaignName, destinationUrl } = req.body || {};
+  if (!campaignName || !campaignName.trim()) {
+    return res.status(400).json({ error: "campaignName is required" });
+  }
+  if (!destinationUrl || !/^https?:\/\//i.test(destinationUrl)) {
+    return res.status(400).json({ error: "destinationUrl must be a valid http(s) URL" });
+  }
+
   const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
 
   let rows;
@@ -52,7 +60,13 @@ uploadRoutes.post("/upload", requireAuth, upload.single("file"), async (req, res
   }
 
   const created = await withTransaction(async (client) => {
-    const result = [];
+    const { rows: campaignRows } = await client.query(
+      "INSERT INTO campaigns (name, destination_url) VALUES ($1, $2) RETURNING id",
+      [campaignName.trim(), destinationUrl]
+    );
+    const campaignId = campaignRows[0].id;
+
+    const people = [];
     for (const row of rows) {
       const nameKey = findNameKey(row);
       const name = String(row[nameKey] ?? "").trim();
@@ -60,15 +74,15 @@ uploadRoutes.post("/upload", requireAuth, upload.single("file"), async (req, res
 
       const code = await generateUniqueCode(client);
       await client.query(
-        "INSERT INTO people (code, name, details_json) VALUES ($1, $2, $3)",
-        [code, name, JSON.stringify(row)]
+        "INSERT INTO people (campaign_id, code, name, details_json) VALUES ($1, $2, $3, $4)",
+        [campaignId, code, name, JSON.stringify(row)]
       );
-      result.push({ code, name });
+      people.push({ code, name });
     }
-    return result;
+    return { campaignId, people };
   });
 
-  if (!created.length) {
+  if (!created.people.length) {
     return res.status(400).json({ error: "No rows had a usable Name value" });
   }
 
@@ -82,7 +96,7 @@ uploadRoutes.post("/upload", requireAuth, upload.single("file"), async (req, res
   archive.pipe(res);
 
   const usedNames = new Map();
-  for (const person of created) {
+  for (const person of created.people) {
     const url = `${publicBaseUrl}/r/${person.code}`;
     const pngBuffer = await QRCode.toBuffer(url, { width: 512, margin: 2 });
 

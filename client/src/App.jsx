@@ -1,7 +1,19 @@
-import Dashboard from "./components/Dashboard.jsx";
+import { useState } from "react";
+import CampaignsList from "./components/CampaignsList.jsx";
+import CampaignDetail from "./components/CampaignDetail.jsx";
 
 // TEMPORARY: login screen bypassed for testing (matches server DISABLE_AUTH=true).
-// To bring it back: restore the session-check + Login flow that used to live here.
 export default function App() {
-  return <Dashboard onLoggedOut={() => {}} />;
+  const [selectedCampaignId, setSelectedCampaignId] = useState(null);
+
+  if (selectedCampaignId) {
+    return (
+      <CampaignDetail
+        campaignId={selectedCampaignId}
+        onBack={() => setSelectedCampaignId(null)}
+      />
+    );
+  }
+
+  return <CampaignsList onSelectCampaign={setSelectedCampaignId} />;
 }

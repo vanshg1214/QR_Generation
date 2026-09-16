@@ -249,3 +249,56 @@ th.sortable:hover {
 .badge-no {
   background: var(--no);
 }
+
+.stacked-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 480px;
+}
+
+.field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.field-label input {
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.clickable-row {
+  cursor: pointer;
+}
+
+.clickable-row:hover {
+  background: #f9fafb;
+}
+
+.back-button {
+  margin-bottom: 8px;
+}
+
+.expand-toggle {
+  width: 20px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.scan-history-row td {
+  background: #f9fafb;
+  white-space: normal;
+}
+
+.scan-history ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.scan-history li {
+  font-size: 0.85rem;
+  padding: 2px 0;
+}

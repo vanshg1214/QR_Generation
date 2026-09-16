@@ -5,26 +5,32 @@ import { requireAuth } from "../auth.js";
 
 export const exportRoutes = Router();
 
-const PEOPLE_QUERY = `
-  SELECT
-    p.name,
-    p.code,
-    p.details_json,
-    p.created_at,
-    COUNT(s.id)::int AS scan_count,
-    MAX(s.scanned_at) AS last_scanned_at
-  FROM people p
-  LEFT JOIN scans s ON s.person_id = p.id
-  GROUP BY p.id
-  ORDER BY LOWER(p.name) ASC
-`;
+async function buildPeopleRows(campaignId) {
+  const { rows } = await pool.query(
+    `
+      SELECT
+        c.name AS campaign_name,
+        p.name,
+        p.code,
+        p.details_json,
+        p.created_at,
+        COUNT(s.id)::int AS scan_count,
+        MAX(s.scanned_at) AS last_scanned_at
+      FROM people p
+      JOIN campaigns c ON c.id = p.campaign_id
+      LEFT JOIN scans s ON s.person_id = p.id
+      WHERE p.campaign_id = $1
+      GROUP BY p.id, c.name
+      ORDER BY LOWER(p.name) ASC
+    `,
+    [campaignId]
+  );
 
-async function buildRows() {
-  const { rows } = await pool.query(PEOPLE_QUERY);
   return rows.map((row) => {
     const details = JSON.parse(row.details_json || "{}");
     delete details[Object.keys(details).find((k) => k.trim().toLowerCase() === "name")];
     return {
+      campaign: row.campaign_name,
       name: row.name,
       ...details,
       code: row.code,
@@ -36,8 +42,41 @@ async function buildRows() {
   });
 }
 
-exportRoutes.get("/export.xlsx", requireAuth, async (req, res) => {
-  const rows = await buildRows();
+// Every individual scan event, most recent first -- the full "who scanned when" log.
+async function buildScanLog(campaignId) {
+  const { rows } = await pool.query(
+    `
+      SELECT p.name AS person_name, s.scanned_at
+      FROM scans s
+      JOIN people p ON p.id = s.person_id
+      WHERE p.campaign_id = $1
+      ORDER BY s.scanned_at DESC
+    `,
+    [campaignId]
+  );
+  return rows.map((row) => ({
+    name: row.person_name,
+    scannedAt: new Date(row.scanned_at).toLocaleString(),
+  }));
+}
+
+async function getCampaignName(campaignId) {
+  const { rows } = await pool.query("SELECT name FROM campaigns WHERE id = $1", [campaignId]);
+  return rows[0]?.name;
+}
+
+exportRoutes.get("/campaigns/:id/export.xlsx", requireAuth, async (req, res) => {
+  const campaignId = Number(req.params.id);
+  if (!Number.isInteger(campaignId)) {
+    return res.status(400).json({ error: "Invalid campaign id" });
+  }
+  const campaignName = await getCampaignName(campaignId);
+  if (!campaignName) {
+    return res.status(404).json({ error: "Campaign not found" });
+  }
+
+  const rows = await buildPeopleRows(campaignId);
+  const scanLog = await buildScanLog(campaignId);
   const workbook = new ExcelJS.Workbook();
 
   const totalPeople = rows.length;
@@ -52,6 +91,7 @@ exportRoutes.get("/export.xlsx", requireAuth, async (req, res) => {
   ];
   summarySheet.getRow(1).font = { bold: true };
   summarySheet.addRows([
+    { metric: "Campaign", value: campaignName },
     { metric: "Total People", value: totalPeople },
     { metric: "Total Viewed", value: totalViewed },
     { metric: "Total Not Viewed", value: totalPeople - totalViewed },
@@ -61,26 +101,46 @@ exportRoutes.get("/export.xlsx", requireAuth, async (req, res) => {
   ]);
   summarySheet.getColumn("metric").font = { bold: true };
 
-  const sheet = workbook.addWorksheet("Scan Tracking");
+  const peopleSheet = workbook.addWorksheet("People");
   const columns = rows.length
     ? Object.keys(rows[0]).map((key) => ({ header: key, key, width: 22 }))
     : [{ header: "name", key: "name", width: 22 }];
-  sheet.columns = columns;
-  sheet.getRow(1).font = { bold: true };
-  rows.forEach((row) => sheet.addRow(row));
+  peopleSheet.columns = columns;
+  peopleSheet.getRow(1).font = { bold: true };
+  rows.forEach((row) => peopleSheet.addRow(row));
+
+  const scanLogSheet = workbook.addWorksheet("Scan Log");
+  scanLogSheet.columns = [
+    { header: "Name", key: "name", width: 28 },
+    { header: "Scanned At", key: "scannedAt", width: 24 },
+  ];
+  scanLogSheet.getRow(1).font = { bold: true };
+  scanLog.forEach((row) => scanLogSheet.addRow(row));
 
   res.setHeader(
     "Content-Type",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
   );
-  res.setHeader("Content-Disposition", `attachment; filename="qr-scan-data.xlsx"`);
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="${campaignName.replace(/[^a-z0-9]+/gi, "_")}-scan-data.xlsx"`
+  );
 
   await workbook.xlsx.write(res);
   res.end();
 });
 
-exportRoutes.get("/export.csv", requireAuth, async (req, res) => {
-  const rows = await buildRows();
+exportRoutes.get("/campaigns/:id/export.csv", requireAuth, async (req, res) => {
+  const campaignId = Number(req.params.id);
+  if (!Number.isInteger(campaignId)) {
+    return res.status(400).json({ error: "Invalid campaign id" });
+  }
+  const campaignName = await getCampaignName(campaignId);
+  if (!campaignName) {
+    return res.status(404).json({ error: "Campaign not found" });
+  }
+
+  const rows = await buildPeopleRows(campaignId);
   const headers = rows.length ? Object.keys(rows[0]) : ["name"];
 
   const escape = (value) => {
@@ -94,6 +154,9 @@ exportRoutes.get("/export.csv", requireAuth, async (req, res) => {
   }
 
   res.setHeader("Content-Type", "text/csv");
-  res.setHeader("Content-Disposition", `attachment; filename="qr-scan-data.csv"`);
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="${campaignName.replace(/[^a-z0-9]+/gi, "_")}-scan-data.csv"`
+  );
   res.send(lines.join("\n"));
 });
