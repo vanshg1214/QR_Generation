@@ -1,0 +1,72 @@
+import "dotenv/config";
+import express from "express";
+import session from "express-session";
+import path from "node:path";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
+
+import { authRoutes } from "./routes/authRoutes.js";
+import { redirectRoutes } from "./routes/redirect.js";
+import { dashboardRoutes } from "./routes/dashboard.js";
+import { uploadRoutes } from "./routes/upload.js";
+import { exportRoutes } from "./routes/export.js";
+import { settingsRoutes } from "./routes/settings.js";
+import { initSchema } from "./db.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const app = express();
+
+app.set("trust proxy", 1);
+app.use(express.json());
+
+app.use(
+  session({
+    name: "qr_tracker_sid",
+    secret: process.env.SESSION_SECRET || "dev-secret-change-me",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
+    },
+  })
+);
+
+// Public: the redirect/tracking endpoint QR codes actually point to.
+app.use(redirectRoutes);
+
+// Everything else the dashboard needs, all password-protected except /api/login and /api/session.
+app.use("/api", authRoutes);
+app.use("/api", dashboardRoutes);
+app.use("/api", uploadRoutes);
+app.use("/api", exportRoutes);
+app.use("/api", settingsRoutes);
+
+// Serve the built React dashboard in production.
+const clientDist = path.join(__dirname, "..", "..", "client", "dist");
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  app.get(/^(?!\/api|\/r\/).*/, (req, res) => {
+    res.sendFile(path.join(clientDist, "index.html"));
+  });
+}
+
+app.use((err, req, res, next) => {
+  console.error(err);
+  res.status(500).json({ error: "Internal server error" });
+});
+
+const port = process.env.PORT || 4000;
+
+initSchema()
+  .then(() => {
+    app.listen(port, () => {
+      console.log(`QR tracker server listening on port ${port}`);
+    });
+  })
+  .catch((err) => {
+    console.error("Failed to initialize database schema:", err);
+    process.exit(1);
+  });
