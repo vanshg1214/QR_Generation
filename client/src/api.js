@@ -1,6 +1,6 @@
-// Empty string when the dashboard is served by the same server as the API (Render alone).
-// Set to the API's own URL when the dashboard is deployed separately (e.g. on Vercel).
-export const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
+// Hardcoded fallback so this works even if the VITE_API_BASE_URL build-time env var
+// never gets applied on Vercel. Override via that env var if the API's URL changes.
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://qr-generation-ag74.onrender.com";
 
 async function request(path, options = {}) {
   const res = await fetch(`${API_BASE}/api${path}`, {
