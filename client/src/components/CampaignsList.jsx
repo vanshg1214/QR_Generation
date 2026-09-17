@@ -56,7 +56,7 @@ export default function CampaignsList({ onSelectCampaign }) {
     <>
       <div className="topbar">
         <div className="topbar-inner">
-          <Logo size="lg" />
+          <Logo size="lg" tone="light" />
           <span className="topbar-tagline">Bulk QR campaigns &amp; scan tracking</span>
         </div>
       </div>
