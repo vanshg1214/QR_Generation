@@ -22,10 +22,19 @@ redirectRoutes.get("/r/:code", async (req, res) => {
   const fallback = person?.destination_url || "https://example.com";
 
   if (person) {
-    await pool.query(
-      "INSERT INTO scans (person_id, user_agent, ip_hash) VALUES ($1, $2, $3)",
-      [person.id, req.headers["user-agent"] || null, hashIp(req.ip || "")]
+    // Camera apps and messaging apps often silently prefetch a link (to build a preview)
+    // before the person actually opens it, which would otherwise inflate the scan count.
+    // Collapse anything within a few seconds of the last scan into a single count.
+    const { rows: recentRows } = await pool.query(
+      "SELECT 1 FROM scans WHERE person_id = $1 AND scanned_at > now() - interval '10 seconds'",
+      [person.id]
     );
+    if (recentRows.length === 0) {
+      await pool.query(
+        "INSERT INTO scans (person_id, user_agent, ip_hash) VALUES ($1, $2, $3)",
+        [person.id, req.headers["user-agent"] || null, hashIp(req.ip || "")]
+      );
+    }
   }
 
   // Fail open: even an unknown/mistyped code still lands the visitor on the
