@@ -98,70 +98,74 @@ export default function CampaignDetail({ campaignId, onBack }) {
   }
 
   return (
-    <div className="dashboard">
-      <header className="dashboard-header">
-        <div>
-          <button className="secondary back-button" onClick={onBack}>← All Campaigns</button>
-          <h1>{campaign?.name}</h1>
-        </div>
-      </header>
-
-      {error && <p className="error-text">{error}</p>}
-
-      <div className="stats-row">
-        <div className="stat">
-          <span className="stat-value">{summary.totalPeople}</span>
-          <span className="stat-label">People</span>
-        </div>
-        <div className="stat">
-          <span className="stat-value">{summary.totalLinks}</span>
-          <span className="stat-label">Links</span>
-        </div>
-        <div className="stat">
-          <span className="stat-value">{summary.totalViewed}</span>
-          <span className="stat-label">Viewed</span>
-        </div>
-        <div className="stat">
-          <span className="stat-value">{summary.totalScans}</span>
-          <span className="stat-label">Total Scans</span>
+    <>
+      <div className="topbar">
+        <div className="topbar-inner">
+          <div className="topbar-heading">
+            <button className="secondary back-button" onClick={onBack}>← All Campaigns</button>
+            <h1>{campaign?.name}</h1>
+          </div>
         </div>
       </div>
 
-      <section className="card">
-        <h2>Campaign Title</h2>
-        <form className="inline-form" onSubmit={handleSaveName}>
-          <input type="text" value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} required />
-          <button type="submit" disabled={savingName}>
-            {savingName ? "Saving…" : "Save"}
-          </button>
-        </form>
-        {nameSaveStatus && <p className="muted">{nameSaveStatus}</p>}
-      </section>
+      <div className="dashboard">
+        {error && <p className="error-text">{error}</p>}
 
-      <section className="card">
-        <h2>Links ({links.length})</h2>
-        <p className="muted">
-          Every already-generated QR code for a link keeps working when you change that link's
-          destination here — no regenerating or reprinting needed.
-        </p>
-        {links.map((link) => (
-          <LinkEditRow key={link.id} campaignId={campaignId} link={link} onSaved={refresh} />
-        ))}
-      </section>
-
-      <section className="card export-card">
-        <h2>Export</h2>
-        <div className="button-row">
-          <a className="button-link" href={`${API_BASE}/api/campaigns/${campaignId}/export.xlsx`}>
-            Export Excel (.xlsx)
-          </a>
-          <button className="secondary" onClick={refresh} disabled={loading}>
-            {loading ? "Refreshing…" : "Refresh"}
-          </button>
+        <div className="stats-row">
+          <div className="stat">
+            <span className="stat-value">{summary.totalPeople}</span>
+            <span className="stat-label">People</span>
+          </div>
+          <div className="stat">
+            <span className="stat-value">{summary.totalLinks}</span>
+            <span className="stat-label">Links</span>
+          </div>
+          <div className="stat">
+            <span className="stat-value">{summary.totalViewed}</span>
+            <span className="stat-label">Viewed</span>
+          </div>
+          <div className="stat">
+            <span className="stat-value">{summary.totalScans}</span>
+            <span className="stat-label">Total Scans</span>
+          </div>
         </div>
-      </section>
 
-      <PeopleTable people={people} />
-    </div>
+        <section className="card">
+          <h2>Campaign Title</h2>
+          <form className="inline-form" onSubmit={handleSaveName}>
+            <input type="text" value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} required />
+            <button type="submit" disabled={savingName}>
+              {savingName ? "Saving…" : "Save"}
+            </button>
+          </form>
+          {nameSaveStatus && <p className="muted">{nameSaveStatus}</p>}
+        </section>
+
+        <section className="card">
+          <h2>Links ({links.length})</h2>
+          <p className="muted">
+            Every already-generated QR code for a link keeps working when you change that link's
+            destination here — no regenerating or reprinting needed.
+          </p>
+          {links.map((link) => (
+            <LinkEditRow key={link.id} campaignId={campaignId} link={link} onSaved={refresh} />
+          ))}
+        </section>
+
+        <section className="card export-card">
+          <h2>Export</h2>
+          <div className="button-row">
+            <a className="button-link" href={`${API_BASE}/api/campaigns/${campaignId}/export.xlsx`}>
+              Export Excel (.xlsx)
+            </a>
+            <button className="secondary" onClick={refresh} disabled={loading}>
+              {loading ? "Refreshing…" : "Refresh"}
+            </button>
+          </div>
+        </section>
+
+        <PeopleTable people={people} />
+      </div>
+    </>
   );
 }
