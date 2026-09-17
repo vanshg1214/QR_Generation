@@ -8,7 +8,19 @@ export const pool = new Pool({
   ssl: /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL || "")
     ? false
     : { rejectUnauthorized: false },
+  // pg's default (10s) closes idle connections almost immediately, so most
+  // requests pay a full new-connection handshake to Supabase (~1-1.5s across
+  // regions) instead of reusing a warm one. Keep connections open much longer.
+  idleTimeoutMillis: 10 * 60 * 1000,
+  keepAlive: true,
 });
+
+// Keeps at least one connection warm so the very next request never pays a
+// fresh handshake, and gives the pool a chance to notice/replace a connection
+// Supabase silently dropped while idle.
+setInterval(() => {
+  pool.query("SELECT 1").catch(() => {});
+}, 4 * 60 * 1000);
 
 export async function initSchema() {
   await pool.query(`
