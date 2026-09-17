@@ -28,7 +28,12 @@ async function buildPeopleRows(campaignId) {
 
   return rows.map((row) => {
     const details = JSON.parse(row.details_json || "{}");
-    delete details[Object.keys(details).find((k) => k.trim().toLowerCase() === "name")];
+    for (const key of Object.keys(details)) {
+      const trimmed = key.trim().toLowerCase();
+      // "__EMPTY", "__EMPTY_1", etc. are SheetJS's auto-generated name for a
+      // column whose header cell was blank in the original spreadsheet.
+      if (trimmed === "name" || /^__empty/.test(trimmed)) delete details[key];
+    }
     return {
       campaign: row.campaign_name,
       name: row.name,

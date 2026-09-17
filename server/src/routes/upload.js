@@ -27,6 +27,17 @@ function findNameKey(row) {
   return key || Object.keys(row)[0];
 }
 
+// SheetJS names a column "__EMPTY", "__EMPTY_1", etc. when its header cell was
+// blank but some row still had data (or stray formatting) in that column.
+// These aren't meaningful to store or display.
+function stripAutoEmptyColumns(row) {
+  const cleaned = {};
+  for (const [key, value] of Object.entries(row)) {
+    if (!/^__empty/i.test(key.trim())) cleaned[key] = value;
+  }
+  return cleaned;
+}
+
 function sanitizeFilename(name) {
   return name.replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "") || "person";
 }
@@ -67,11 +78,12 @@ uploadRoutes.post("/upload", requireAuth, upload.single("file"), async (req, res
     const campaignId = campaignRows[0].id;
 
     const people = [];
-    for (const row of rows) {
-      const nameKey = findNameKey(row);
-      const name = String(row[nameKey] ?? "").trim();
+    for (const rawRow of rows) {
+      const nameKey = findNameKey(rawRow);
+      const name = String(rawRow[nameKey] ?? "").trim();
       if (!name) continue;
 
+      const row = stripAutoEmptyColumns(rawRow);
       const code = await generateUniqueCode(client);
       await client.query(
         "INSERT INTO people (campaign_id, code, name, details_json) VALUES ($1, $2, $3, $4)",

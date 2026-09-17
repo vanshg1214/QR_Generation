@@ -17,7 +17,10 @@ export default function PeopleTable({ people }) {
     const keys = new Set();
     for (const person of people) {
       for (const key of Object.keys(person.details)) {
-        if (key.trim().toLowerCase() !== "name") keys.add(key);
+        const trimmed = key.trim().toLowerCase();
+        // "__EMPTY", "__EMPTY_1", etc. are SheetJS's auto-generated name for a
+        // column whose header cell was blank in the original spreadsheet.
+        if (trimmed !== "name" && !/^__empty/.test(trimmed)) keys.add(key);
       }
     }
     return Array.from(keys);
