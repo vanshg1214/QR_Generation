@@ -12,27 +12,27 @@ function hashIp(ip) {
 // Public, unauthenticated: this is the link encoded in each person's QR code.
 redirectRoutes.get("/r/:code", async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT p.id, c.destination_url
-     FROM people p
-     JOIN campaigns c ON c.id = p.campaign_id
-     WHERE p.code = $1`,
+    `SELECT co.id AS code_id, cl.destination_url
+     FROM codes co
+     JOIN campaign_links cl ON cl.id = co.campaign_link_id
+     WHERE co.code = $1`,
     [req.params.code]
   );
-  const person = rows[0];
-  const fallback = person?.destination_url || "https://example.com";
+  const match = rows[0];
+  const fallback = match?.destination_url || "https://example.com";
 
-  if (person) {
+  if (match) {
     // Camera apps and messaging apps often silently prefetch a link (to build a preview)
     // before the person actually opens it, which would otherwise inflate the scan count.
     // Collapse anything within a few seconds of the last scan into a single count.
     const { rows: recentRows } = await pool.query(
-      "SELECT 1 FROM scans WHERE person_id = $1 AND scanned_at > now() - interval '10 seconds'",
-      [person.id]
+      "SELECT 1 FROM scans WHERE code_id = $1 AND scanned_at > now() - interval '10 seconds'",
+      [match.code_id]
     );
     if (recentRows.length === 0) {
       await pool.query(
-        "INSERT INTO scans (person_id, user_agent, ip_hash) VALUES ($1, $2, $3)",
-        [person.id, req.headers["user-agent"] || null, hashIp(req.ip || "")]
+        "INSERT INTO scans (code_id, user_agent, ip_hash) VALUES ($1, $2, $3)",
+        [match.code_id, req.headers["user-agent"] || null, hashIp(req.ip || "")]
       );
     }
   }

@@ -30,11 +30,16 @@ export const api = {
   getCampaign: (id) => request(`/campaigns/${id}`).then((r) => r.json()),
   updateCampaign: (id, fields) =>
     request(`/campaigns/${id}`, { method: "PATCH", body: JSON.stringify(fields) }).then((r) => r.json()),
+  updateLink: (campaignId, linkId, fields) =>
+    request(`/campaigns/${campaignId}/links/${linkId}`, {
+      method: "PATCH",
+      body: JSON.stringify(fields),
+    }).then((r) => r.json()),
 
-  async createCampaign({ campaignName, destinationUrl, file }) {
+  async createCampaign({ campaignName, links, file }) {
     const formData = new FormData();
     formData.append("campaignName", campaignName);
-    formData.append("destinationUrl", destinationUrl);
+    formData.append("links", JSON.stringify(links));
     formData.append("file", file);
     const res = await fetch(`${API_BASE}/api/upload`, {
       method: "POST",

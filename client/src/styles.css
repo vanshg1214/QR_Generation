@@ -302,3 +302,61 @@ th.sortable:hover {
   font-size: 0.85rem;
   padding: 2px 0;
 }
+
+.links-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+.link-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.link-row input {
+  flex: 1;
+  min-width: 160px;
+}
+
+.remove-link-btn {
+  white-space: nowrap;
+}
+
+.link-detail-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.link-detail-row:last-child {
+  border-bottom: none;
+}
+
+.link-detail-label {
+  font-weight: 600;
+  min-width: 120px;
+}
+
+.link-detail-row input[type="url"] {
+  flex: 1;
+  min-width: 220px;
+}
+
+.link-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.link-breakdown-item {
+  border-left: 3px solid var(--border);
+  padding-left: 10px;
+}

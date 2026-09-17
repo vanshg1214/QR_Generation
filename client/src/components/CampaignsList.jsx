@@ -51,6 +51,7 @@ export default function CampaignsList({ onSelectCampaign }) {
             <thead>
               <tr>
                 <th>Campaign</th>
+                <th>Links</th>
                 <th>People</th>
                 <th>Viewed</th>
                 <th>Total Scans</th>
@@ -61,6 +62,7 @@ export default function CampaignsList({ onSelectCampaign }) {
               {campaigns.map((c) => (
                 <tr key={c.id} className="clickable-row" onClick={() => onSelectCampaign(c.id)}>
                   <td>{c.name}</td>
+                  <td>{c.linkCount}</td>
                   <td>{c.peopleCount}</td>
                   <td>{c.viewedCount}</td>
                   <td>{c.totalScans}</td>
@@ -69,7 +71,7 @@ export default function CampaignsList({ onSelectCampaign }) {
               ))}
               {campaigns.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={5} className="muted">
+                  <td colSpan={6} className="muted">
                     No campaigns yet — create one above.
                   </td>
                 </tr>

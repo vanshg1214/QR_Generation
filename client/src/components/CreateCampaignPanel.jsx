@@ -1,12 +1,30 @@
 import { useRef, useState } from "react";
 import { api, downloadBlob } from "../api.js";
 
+const MAX_LINKS = 10;
+
+function emptyLink() {
+  return { label: "", destinationUrl: "" };
+}
+
 export default function CreateCampaignPanel({ onCreated }) {
   const fileInput = useRef(null);
   const [campaignName, setCampaignName] = useState("");
-  const [destinationUrl, setDestinationUrl] = useState("");
+  const [links, setLinks] = useState([emptyLink()]);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+
+  function updateLink(index, field, value) {
+    setLinks((prev) => prev.map((l, i) => (i === index ? { ...l, [field]: value } : l)));
+  }
+
+  function addLink() {
+    setLinks((prev) => (prev.length >= MAX_LINKS ? prev : [...prev, emptyLink()]));
+  }
+
+  function removeLink(index) {
+    setLinks((prev) => prev.filter((_, i) => i !== index));
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -16,13 +34,13 @@ export default function CreateCampaignPanel({ onCreated }) {
       return;
     }
     setBusy(true);
-    setStatus("Processing… generating a QR code per person.");
+    setStatus("Processing… generating QR codes for every person and every link.");
     try {
-      const blob = await api.createCampaign({ campaignName, destinationUrl, file });
+      const blob = await api.createCampaign({ campaignName, links, file });
       downloadBlob(blob, `${campaignName.trim().replace(/[^a-z0-9]+/gi, "_")}-qr-codes.zip`);
-      setStatus("Done — QR codes downloaded as a zip.");
+      setStatus("Done — QR codes downloaded as a zip (one folder per person).");
       setCampaignName("");
-      setDestinationUrl("");
+      setLinks([emptyLink()]);
       fileInput.current.value = "";
       onCreated?.();
     } catch (err) {
@@ -36,9 +54,10 @@ export default function CreateCampaignPanel({ onCreated }) {
     <section className="card">
       <h2>Create a New Campaign</h2>
       <p className="muted">
-        Give this batch a title, set where every QR code should redirect to, and upload the Excel
-        (.xlsx) file of people (needs a "Name" column). Each row gets a unique, trackable QR code,
-        and all codes download as a zip.
+        Give this batch a title, add one or more links (each gets its own QR code per person —
+        e.g. "Demo", "Testimonial", "Product Page"), then upload the Excel (.xlsx) file of people
+        (needs a "Name" column). The zip downloads with one folder per person, containing a QR
+        code for each link.
       </p>
       <form className="stacked-form" onSubmit={handleSubmit}>
         <input
@@ -48,13 +67,42 @@ export default function CreateCampaignPanel({ onCreated }) {
           onChange={(e) => setCampaignName(e.target.value)}
           required
         />
-        <input
-          type="url"
-          placeholder="Destination link (e.g. https://your-content-link.com)"
-          value={destinationUrl}
-          onChange={(e) => setDestinationUrl(e.target.value)}
-          required
-        />
+
+        <div className="links-editor">
+          {links.map((link, i) => (
+            <div className="link-row" key={i}>
+              <input
+                type="text"
+                placeholder={`Link ${i + 1} label (e.g. Demo)`}
+                value={link.label}
+                onChange={(e) => updateLink(i, "label", e.target.value)}
+                required
+              />
+              <input
+                type="url"
+                placeholder="Destination link (e.g. https://your-content-link.com)"
+                value={link.destinationUrl}
+                onChange={(e) => updateLink(i, "destinationUrl", e.target.value)}
+                required
+              />
+              {links.length > 1 && (
+                <button
+                  type="button"
+                  className="secondary remove-link-btn"
+                  onClick={() => removeLink(i)}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          ))}
+          {links.length < MAX_LINKS && (
+            <button type="button" className="secondary" onClick={addLink}>
+              + Add Another Link
+            </button>
+          )}
+        </div>
+
         <input type="file" accept=".xlsx,.xls,.csv" ref={fileInput} />
         <button type="submit" disabled={busy}>
           {busy ? "Working…" : "Create Campaign & Generate QR Codes"}

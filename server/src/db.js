@@ -15,25 +15,38 @@ export async function initSchema() {
     CREATE TABLE IF NOT EXISTS campaigns (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS campaign_links (
+      id SERIAL PRIMARY KEY,
+      campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+      label TEXT NOT NULL,
       destination_url TEXT NOT NULL,
+      position INTEGER NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
 
     CREATE TABLE IF NOT EXISTS people (
       id SERIAL PRIMARY KEY,
-      campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE,
-      code TEXT UNIQUE NOT NULL,
+      campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
       details_json TEXT NOT NULL DEFAULT '{}',
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
 
-    -- Safety net for a database created before campaigns existed.
-    ALTER TABLE people ADD COLUMN IF NOT EXISTS campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE;
+    CREATE TABLE IF NOT EXISTS codes (
+      id SERIAL PRIMARY KEY,
+      person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+      campaign_link_id INTEGER NOT NULL REFERENCES campaign_links(id) ON DELETE CASCADE,
+      code TEXT UNIQUE NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (person_id, campaign_link_id)
+    );
 
     CREATE TABLE IF NOT EXISTS scans (
       id SERIAL PRIMARY KEY,
-      person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+      code_id INTEGER NOT NULL REFERENCES codes(id) ON DELETE CASCADE,
       scanned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       user_agent TEXT,
       ip_hash TEXT
@@ -44,26 +57,79 @@ export async function initSchema() {
       value TEXT
     );
 
-    CREATE INDEX IF NOT EXISTS idx_scans_person_id ON scans(person_id);
+    CREATE INDEX IF NOT EXISTS idx_codes_person_id ON codes(person_id);
+    CREATE INDEX IF NOT EXISTS idx_codes_campaign_link_id ON codes(campaign_link_id);
     CREATE INDEX IF NOT EXISTS idx_people_campaign_id ON people(campaign_id);
+    CREATE INDEX IF NOT EXISTS idx_campaign_links_campaign_id ON campaign_links(campaign_id);
   `);
 
-  // Migrate any people that predate campaigns into a single catch-all campaign,
-  // reusing the old global destination link if one was set, so no data is lost.
-  const { rows: orphanRows } = await pool.query(
-    "SELECT COUNT(*)::int AS c FROM people WHERE campaign_id IS NULL"
+  await migrateSingleLinkSchema();
+
+  // Only valid once code_id definitely exists on scans (fresh installs get it from the
+  // CREATE TABLE above; migrated ones get it inside migrateSingleLinkSchema).
+  await pool.query("CREATE INDEX IF NOT EXISTS idx_scans_code_id ON scans(code_id)");
+}
+
+async function columnExists(table, column) {
+  const { rows } = await pool.query(
+    "SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = $2",
+    [table, column]
   );
-  if (orphanRows[0].c > 0) {
-    const oldDestination = await getSetting("destination_url");
-    const { rows: campaignRows } = await pool.query(
-      "INSERT INTO campaigns (name, destination_url) VALUES ($1, $2) RETURNING id",
-      ["Migrated Data", oldDestination || "https://example.com"]
-    );
-    await pool.query("UPDATE people SET campaign_id = $1 WHERE campaign_id IS NULL", [
-      campaignRows[0].id,
-    ]);
+  return rows.length > 0;
+}
+
+// Older deployments had one destination_url directly on campaigns, one code directly
+// on people, and scans keyed by person_id. Move that data forward into the
+// campaign_links / codes tables (one "Main Link" per campaign, reusing existing codes
+// so already-printed QR images keep working), then drop the old columns.
+async function migrateSingleLinkSchema() {
+  const hasOldDestination = await columnExists("campaigns", "destination_url");
+  const hasOldPersonCode = await columnExists("people", "code");
+  const hasOldScanPersonId = await columnExists("scans", "person_id");
+
+  if (hasOldDestination) {
+    await pool.query(`
+      INSERT INTO campaign_links (campaign_id, label, destination_url, position)
+      SELECT c.id, 'Main Link', c.destination_url, 0
+      FROM campaigns c
+      WHERE NOT EXISTS (SELECT 1 FROM campaign_links cl WHERE cl.campaign_id = c.id)
+    `);
   }
-  await pool.query("ALTER TABLE people ALTER COLUMN campaign_id SET NOT NULL");
+
+  if (hasOldPersonCode) {
+    await pool.query(`
+      INSERT INTO codes (person_id, campaign_link_id, code)
+      SELECT p.id,
+        (SELECT cl.id FROM campaign_links cl WHERE cl.campaign_id = p.campaign_id ORDER BY cl.position, cl.id LIMIT 1),
+        p.code
+      FROM people p
+      WHERE p.code IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM codes c WHERE c.person_id = p.id)
+    `);
+  }
+
+  if (hasOldScanPersonId) {
+    await pool.query(
+      "ALTER TABLE scans ADD COLUMN IF NOT EXISTS code_id INTEGER REFERENCES codes(id) ON DELETE CASCADE"
+    );
+    await pool.query(`
+      UPDATE scans s
+      SET code_id = c.id
+      FROM codes c
+      WHERE s.code_id IS NULL AND c.person_id = s.person_id
+    `);
+    // A scan with no matching code is an orphaned data anomaly; don't let it block the migration.
+    await pool.query("DELETE FROM scans WHERE code_id IS NULL");
+    await pool.query("ALTER TABLE scans ALTER COLUMN code_id SET NOT NULL");
+    await pool.query("ALTER TABLE scans DROP COLUMN person_id");
+  }
+
+  if (hasOldPersonCode) {
+    await pool.query("ALTER TABLE people DROP COLUMN code");
+  }
+  if (hasOldDestination) {
+    await pool.query("ALTER TABLE campaigns DROP COLUMN destination_url");
+  }
 }
 
 export async function getSetting(key) {

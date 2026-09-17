@@ -116,18 +116,25 @@ export default function PeopleTable({ people }) {
                     <tr className="scan-history-row">
                       <td></td>
                       <td colSpan={columnCount - 1}>
-                        {p.scans && p.scans.length ? (
-                          <div className="scan-history">
-                            <strong>Scan history for {p.name}:</strong>
-                            <ul>
-                              {[...p.scans].reverse().map((scannedAt, idx) => (
-                                <li key={idx}>{formatDate(scannedAt)}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        ) : (
-                          <span className="muted">Not scanned yet.</span>
-                        )}
+                        <div className="link-breakdown">
+                          <strong>Per-link breakdown for {p.name}:</strong>
+                          {p.links.map((link) => (
+                            <div className="link-breakdown-item" key={link.linkId}>
+                              <div>
+                                <strong>{link.label}</strong> — {link.scanCount} scan
+                                {link.scanCount === 1 ? "" : "s"}
+                                {link.lastScannedAt ? ` — last: ${formatDate(link.lastScannedAt)}` : ""}
+                              </div>
+                              {link.scans.length > 0 && (
+                                <ul>
+                                  {[...link.scans].reverse().map((scannedAt, idx) => (
+                                    <li key={idx}>{formatDate(scannedAt)}</li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </td>
                     </tr>
                   )}

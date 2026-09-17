@@ -8,7 +8,7 @@ export const qrRoutes = Router();
 // spreadsheet (or anyone with the link) can view/download it without logging in --
 // knowing the code reveals nothing beyond what scanning the QR itself already would.
 qrRoutes.get("/qr/:code.png", async (req, res) => {
-  const { rows } = await pool.query("SELECT 1 FROM people WHERE code = $1", [req.params.code]);
+  const { rows } = await pool.query("SELECT 1 FROM codes WHERE code = $1", [req.params.code]);
   if (!rows.length) {
     return res.status(404).json({ error: "Unknown code" });
   }
