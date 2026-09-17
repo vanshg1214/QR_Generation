@@ -1,7 +1,7 @@
 export default function Logo({ tone = "dark", size = "md" }) {
-  const markBg = tone === "light" ? "#f4efe1" : "#e7f0ea";
+  const markBg = tone === "light" ? "#f2eadf" : "#e7f0ea";
   const markColor = "#123c2c";
-  const wordColor = tone === "light" ? "#f4efe1" : "#16211c";
+  const wordColor = tone === "light" ? "#f2eadf" : "#16211c";
   const accentColor = tone === "light" ? "#a9d8bc" : "#1f7a4d";
 
   return (
