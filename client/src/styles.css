@@ -189,6 +189,17 @@ button.secondary:hover {
   font-size: 0.85rem;
 }
 
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 9px;
+  flex-shrink: 0;
+}
+
 .topbar-inner .back-button {
   margin-bottom: 0;
   background: var(--cream-tint-10);
@@ -202,8 +213,9 @@ button.secondary:hover {
 
 .topbar-heading {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
 }
 
 /* Logo */
@@ -510,10 +522,6 @@ tbody tr:hover {
 
 .clickable-row {
   cursor: pointer;
-}
-
-.back-button {
-  margin-bottom: 8px;
 }
 
 .expand-toggle {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, API_BASE } from "../api.js";
 import PeopleTable from "./PeopleTable.jsx";
 import Logo from "./Logo.jsx";
-import { IconUsers, IconLink, IconEye, IconScan } from "./icons.jsx";
+import { IconUsers, IconLink, IconEye, IconScan, IconArrowLeft } from "./icons.jsx";
 
 function LinkEditRow({ campaignId, link, onSaved }) {
   const [labelDraft, setLabelDraft] = useState(link.label);
@@ -104,7 +104,9 @@ export default function CampaignDetail({ campaignId, onBack }) {
       <div className="topbar">
         <div className="topbar-inner">
           <div className="topbar-heading">
-            <button className="secondary back-button" onClick={onBack}>← All Campaigns</button>
+            <button className="icon-button back-button" onClick={onBack} aria-label="Back to all campaigns" title="Back to all campaigns">
+              <IconArrowLeft />
+            </button>
             <Logo size="md" tone="light" />
           </div>
           <span className="topbar-tagline">{campaign?.name}</span>
