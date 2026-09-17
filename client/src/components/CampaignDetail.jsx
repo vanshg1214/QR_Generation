@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, API_BASE } from "../api.js";
 import PeopleTable from "./PeopleTable.jsx";
+import Logo from "./Logo.jsx";
+import { IconUsers, IconLink, IconEye, IconScan } from "./icons.jsx";
 
 function LinkEditRow({ campaignId, link, onSaved }) {
   const [labelDraft, setLabelDraft] = useState(link.label);
@@ -103,34 +105,53 @@ export default function CampaignDetail({ campaignId, onBack }) {
         <div className="topbar-inner">
           <div className="topbar-heading">
             <button className="secondary back-button" onClick={onBack}>← All Campaigns</button>
-            <h1>{campaign?.name}</h1>
+            <Logo size="md" tone="light" />
           </div>
+          <span className="topbar-tagline">{campaign?.name}</span>
         </div>
       </div>
 
       <div className="dashboard">
+        <div className="hero">
+          <span className="eyebrow">Campaign</span>
+          <h2 className="hero-title">{campaign?.name}</h2>
+        </div>
+
         {error && <p className="error-text">{error}</p>}
 
         <div className="stats-row">
           <div className="stat">
-            <span className="stat-value">{summary.totalPeople}</span>
-            <span className="stat-label">People</span>
+            <span className="stat-icon"><IconUsers /></span>
+            <div>
+              <span className="stat-value">{summary.totalPeople}</span>
+              <span className="stat-label">People</span>
+            </div>
           </div>
           <div className="stat">
-            <span className="stat-value">{summary.totalLinks}</span>
-            <span className="stat-label">Links</span>
+            <span className="stat-icon"><IconLink /></span>
+            <div>
+              <span className="stat-value">{summary.totalLinks}</span>
+              <span className="stat-label">Links</span>
+            </div>
           </div>
           <div className="stat">
-            <span className="stat-value">{summary.totalViewed}</span>
-            <span className="stat-label">Viewed</span>
+            <span className="stat-icon"><IconEye /></span>
+            <div>
+              <span className="stat-value">{summary.totalViewed}</span>
+              <span className="stat-label">Viewed</span>
+            </div>
           </div>
           <div className="stat">
-            <span className="stat-value">{summary.totalScans}</span>
-            <span className="stat-label">Total Scans</span>
+            <span className="stat-icon"><IconScan /></span>
+            <div>
+              <span className="stat-value">{summary.totalScans}</span>
+              <span className="stat-label">Total Scans</span>
+            </div>
           </div>
         </div>
 
         <section className="card">
+          <span className="eyebrow">Settings</span>
           <h2>Campaign Title</h2>
           <form className="inline-form" onSubmit={handleSaveName}>
             <input type="text" value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} required />
@@ -142,6 +163,7 @@ export default function CampaignDetail({ campaignId, onBack }) {
         </section>
 
         <section className="card">
+          <span className="eyebrow">Destinations</span>
           <h2>Links ({links.length})</h2>
           <p className="muted">
             Every already-generated QR code for a link keeps working when you change that link's
@@ -153,6 +175,7 @@ export default function CampaignDetail({ campaignId, onBack }) {
         </section>
 
         <section className="card export-card">
+          <span className="eyebrow">Data</span>
           <h2>Export</h2>
           <div className="button-row">
             <a className="button-link" href={`${API_BASE}/api/campaigns/${campaignId}/export.xlsx`}>
@@ -165,6 +188,8 @@ export default function CampaignDetail({ campaignId, onBack }) {
         </section>
 
         <PeopleTable people={people} />
+
+        <p className="footer-note">LINK-2-QR — bulk QR campaigns &amp; scan tracking</p>
       </div>
     </>
   );

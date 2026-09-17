@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "../api.js";
+import Logo from "./Logo.jsx";
 
 export default function Login({ onLoggedIn }) {
   const [password, setPassword] = useState("");
@@ -23,7 +24,7 @@ export default function Login({ onLoggedIn }) {
   return (
     <div className="page-center">
       <form className="card login-card" onSubmit={handleSubmit}>
-        <h1>QR Code Tracker</h1>
+        <Logo size="md" />
         <p className="muted">Enter the admin password to continue.</p>
         <input
           type="password"

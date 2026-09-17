@@ -7,7 +7,7 @@ function emptyLink() {
   return { label: "", destinationUrl: "" };
 }
 
-export default function CreateCampaignPanel({ onCreated }) {
+export default function CreateCampaignPanel({ onCreated, onCancel }) {
   const fileInput = useRef(null);
   const [campaignName, setCampaignName] = useState("");
   const [links, setLinks] = useState([emptyLink()]);
@@ -52,7 +52,17 @@ export default function CreateCampaignPanel({ onCreated }) {
 
   return (
     <section className="card">
-      <h2>Create a New Campaign</h2>
+      <div className="section-header">
+        <div>
+          <span className="eyebrow">New Campaign</span>
+          <h2>Set up your links and upload people</h2>
+        </div>
+        {onCancel && (
+          <button type="button" className="secondary" onClick={onCancel}>
+            Cancel
+          </button>
+        )}
+      </div>
       <p className="muted">
         Give this batch a title, add one or more links (each gets its own QR code per person —
         e.g. "Demo", "Testimonial", "Product Page"), then upload the Excel (.xlsx) file of people
