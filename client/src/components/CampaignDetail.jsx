@@ -108,9 +108,6 @@ export default function CampaignDetail({ campaignId, onBack }) {
           <a className="button-link" href={`${API_BASE}/api/campaigns/${campaignId}/export.xlsx`}>
             Export Excel (.xlsx)
           </a>
-          <a className="button-link" href={`${API_BASE}/api/campaigns/${campaignId}/export.csv`}>
-            Export CSV
-          </a>
           <button className="secondary" onClick={refresh} disabled={loading}>
             {loading ? "Refreshing…" : "Refresh"}
           </button>

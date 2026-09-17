@@ -5,7 +5,7 @@ import { requireAuth } from "../auth.js";
 
 export const exportRoutes = Router();
 
-async function buildPeopleRows(campaignId) {
+async function buildPeopleRows(campaignId, publicBaseUrl) {
   const { rows } = await pool.query(
     `
       SELECT
@@ -39,6 +39,7 @@ async function buildPeopleRows(campaignId) {
       name: row.name,
       ...details,
       code: row.code,
+      qrCode: { text: "View QR", hyperlink: `${publicBaseUrl}/qr/${row.code}.png` },
       viewed: row.scan_count > 0 ? "Yes" : "No",
       scanCount: row.scan_count,
       lastScannedAt: row.last_scanned_at ? new Date(row.last_scanned_at).toLocaleString() : "",
@@ -70,6 +71,17 @@ async function getCampaignName(campaignId) {
   return rows[0]?.name;
 }
 
+const COLUMN_LABELS = {
+  campaign: "Campaign",
+  name: "Name",
+  code: "QR Code ID",
+  qrCode: "QR Code",
+  viewed: "Viewed",
+  scanCount: "Scan Count",
+  lastScannedAt: "Last Scanned",
+  uploadedAt: "Uploaded At",
+};
+
 exportRoutes.get("/campaigns/:id/export.xlsx", requireAuth, async (req, res) => {
   const campaignId = Number(req.params.id);
   if (!Number.isInteger(campaignId)) {
@@ -80,7 +92,8 @@ exportRoutes.get("/campaigns/:id/export.xlsx", requireAuth, async (req, res) => 
     return res.status(404).json({ error: "Campaign not found" });
   }
 
-  const rows = await buildPeopleRows(campaignId);
+  const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+  const rows = await buildPeopleRows(campaignId, publicBaseUrl);
   const scanLog = await buildScanLog(campaignId);
   const workbook = new ExcelJS.Workbook();
 
@@ -108,11 +121,16 @@ exportRoutes.get("/campaigns/:id/export.xlsx", requireAuth, async (req, res) => 
 
   const peopleSheet = workbook.addWorksheet("People");
   const columns = rows.length
-    ? Object.keys(rows[0]).map((key) => ({ header: key, key, width: 22 }))
-    : [{ header: "name", key: "name", width: 22 }];
+    ? Object.keys(rows[0]).map((key) => ({
+        header: COLUMN_LABELS[key] || key,
+        key,
+        width: key === "qrCode" ? 14 : 22,
+      }))
+    : [{ header: "Name", key: "name", width: 22 }];
   peopleSheet.columns = columns;
   peopleSheet.getRow(1).font = { bold: true };
   rows.forEach((row) => peopleSheet.addRow(row));
+  peopleSheet.getColumn("qrCode").font = { color: { argb: "FF2563EB" }, underline: true };
 
   const scanLogSheet = workbook.addWorksheet("Scan Log");
   scanLogSheet.columns = [
@@ -133,35 +151,4 @@ exportRoutes.get("/campaigns/:id/export.xlsx", requireAuth, async (req, res) => 
 
   await workbook.xlsx.write(res);
   res.end();
-});
-
-exportRoutes.get("/campaigns/:id/export.csv", requireAuth, async (req, res) => {
-  const campaignId = Number(req.params.id);
-  if (!Number.isInteger(campaignId)) {
-    return res.status(400).json({ error: "Invalid campaign id" });
-  }
-  const campaignName = await getCampaignName(campaignId);
-  if (!campaignName) {
-    return res.status(404).json({ error: "Campaign not found" });
-  }
-
-  const rows = await buildPeopleRows(campaignId);
-  const headers = rows.length ? Object.keys(rows[0]) : ["name"];
-
-  const escape = (value) => {
-    const str = String(value ?? "");
-    return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
-  };
-
-  const lines = [headers.join(",")];
-  for (const row of rows) {
-    lines.push(headers.map((h) => escape(row[h])).join(","));
-  }
-
-  res.setHeader("Content-Type", "text/csv");
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename="${campaignName.replace(/[^a-z0-9]+/gi, "_")}-scan-data.csv"`
-  );
-  res.send(lines.join("\n"));
 });

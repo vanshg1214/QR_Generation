@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { authRoutes } from "./routes/authRoutes.js";
 import { redirectRoutes } from "./routes/redirect.js";
+import { qrRoutes } from "./routes/qr.js";
 import { campaignRoutes } from "./routes/campaigns.js";
 import { uploadRoutes } from "./routes/upload.js";
 import { exportRoutes } from "./routes/export.js";
@@ -56,8 +57,10 @@ app.use(
   })
 );
 
-// Public: the redirect/tracking endpoint QR codes actually point to.
+// Public: the redirect/tracking endpoint QR codes actually point to, and the
+// on-demand QR image endpoint used from exported spreadsheets.
 app.use(redirectRoutes);
+app.use(qrRoutes);
 
 // Everything else the dashboard needs, all password-protected except /api/login and /api/session.
 app.use("/api", authRoutes);
@@ -69,7 +72,7 @@ app.use("/api", exportRoutes);
 const clientDist = path.join(__dirname, "..", "..", "client", "dist");
 if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
-  app.get(/^(?!\/api|\/r\/).*/, (req, res) => {
+  app.get(/^(?!\/api|\/r\/|\/qr\/).*/, (req, res) => {
     res.sendFile(path.join(clientDist, "index.html"));
   });
 }
