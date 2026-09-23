@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
-import { api, API_BASE } from "../api.js";
+import { api, API_BASE, downloadBlob } from "../api.js";
 import PeopleTable from "./PeopleTable.jsx";
 import Logo from "./Logo.jsx";
-import { IconUsers, IconLink, IconEye, IconScan, IconArrowLeft } from "./icons.jsx";
+import { IconUsers, IconLink, IconEye, IconScan, IconArrowLeft, IconTrash, IconDownload } from "./icons.jsx";
 
 function LinkEditRow({ campaignId, link, onSaved }) {
   const [labelDraft, setLabelDraft] = useState(link.label);
@@ -89,6 +89,29 @@ export default function CampaignDetail({ campaignId, onBack }) {
     }
   }
 
+  async function handleDelete() {
+    if (!window.confirm(`Delete campaign "${campaign?.name}"? This will permanently remove all people, QR codes, and scan data. This cannot be undone.`)) return;
+    const toastId = toast.loading("Deleting campaign…");
+    try {
+      await api.deleteCampaign(campaignId);
+      toast.success("Campaign deleted.", { id: toastId });
+      onBack();
+    } catch (err) {
+      toast.error(err.message, { id: toastId });
+    }
+  }
+
+  async function handleRedownload() {
+    const toastId = toast.loading("Preparing QR zip…");
+    try {
+      const blob = await api.downloadQrZip(campaignId);
+      downloadBlob(blob, `${(campaign?.name || "campaign").replace(/[^a-z0-9]+/gi, "_")}-qr-codes.zip`);
+      toast.success("QR zip downloaded!", { id: toastId });
+    } catch (err) {
+      toast.error(err.message, { id: toastId });
+    }
+  }
+
   if (loading && !campaign) {
     return <div className="page-center">Loading…</div>;
   }
@@ -169,15 +192,32 @@ export default function CampaignDetail({ campaignId, onBack }) {
 
         <section className="card export-card">
           <span className="eyebrow">Data</span>
-          <h2>Export</h2>
+          <h2>Export &amp; Download</h2>
           <div className="button-row">
             <a className="button-link" href={`${API_BASE}/api/campaigns/${campaignId}/export.xlsx`}>
               Export Excel (.xlsx)
             </a>
+            <button onClick={handleRedownload}>
+              <IconDownload width={15} height={15} style={{ marginRight: 6, verticalAlign: "-2px" }} />
+              Re-download QR Zip
+            </button>
             <button className="secondary" onClick={refresh} disabled={loading}>
               {loading ? "Refreshing…" : "Refresh"}
             </button>
           </div>
+        </section>
+
+        <section className="card" style={{ borderColor: "var(--danger)", borderWidth: 1 }}>
+          <span className="eyebrow" style={{ color: "var(--danger)" }}>Danger Zone</span>
+          <h2>Delete Campaign</h2>
+          <p className="muted">Permanently removes all people, QR codes, and scan history for this campaign. This action cannot be undone.</p>
+          <button
+            style={{ background: "var(--danger)" }}
+            onClick={handleDelete}
+          >
+            <IconTrash width={15} height={15} style={{ marginRight: 6, verticalAlign: "-2px" }} />
+            Delete This Campaign
+          </button>
         </section>
 
         <PeopleTable people={people} />

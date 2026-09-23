@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api } from "../api.js";
+import { toast } from "react-hot-toast";
+import { api, downloadBlob } from "../api.js";
 import Logo from "./Logo.jsx";
 import CreateCampaignPanel from "./CreateCampaignPanel.jsx";
-import { IconUsers, IconEye, IconScan, IconPlus, IconLayers, IconInbox } from "./icons.jsx";
+import { IconUsers, IconEye, IconScan, IconPlus, IconLayers, IconInbox, IconTrash, IconDownload } from "./icons.jsx";
 
 function formatDate(value) {
   if (!value) return "—";
@@ -50,6 +51,31 @@ export default function CampaignsList({ onSelectCampaign }) {
   function handleCreated() {
     setShowCreate(false);
     refresh();
+  }
+
+  async function handleDelete(e, campaign) {
+    e.stopPropagation(); // don't navigate into the campaign
+    if (!window.confirm(`Delete campaign "${campaign.name}"? This will permanently remove all people, QR codes, and scan data. This cannot be undone.`)) return;
+    const toastId = toast.loading(`Deleting "${campaign.name}"…`);
+    try {
+      await api.deleteCampaign(campaign.id);
+      toast.success(`"${campaign.name}" deleted.`, { id: toastId });
+      refresh();
+    } catch (err) {
+      toast.error(err.message, { id: toastId });
+    }
+  }
+
+  async function handleRedownload(e, campaign) {
+    e.stopPropagation();
+    const toastId = toast.loading(`Preparing QR zip for "${campaign.name}"…`);
+    try {
+      const blob = await api.downloadQrZip(campaign.id);
+      downloadBlob(blob, `${campaign.name.trim().replace(/[^a-z0-9]+/gi, "_")}-qr-codes.zip`);
+      toast.success("QR zip downloaded!", { id: toastId });
+    } catch (err) {
+      toast.error(err.message, { id: toastId });
+    }
   }
 
   return (
@@ -144,6 +170,7 @@ export default function CampaignsList({ onSelectCampaign }) {
                     <th>Viewed</th>
                     <th>Total Scans</th>
                     <th>Created</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -155,6 +182,24 @@ export default function CampaignsList({ onSelectCampaign }) {
                       <td>{c.viewedCount}</td>
                       <td>{c.totalScans}</td>
                       <td>{formatDate(c.createdAt)}</td>
+                      <td>
+                        <div className="row-actions">
+                          <button
+                            className="icon-action-btn"
+                            title="Re-download QR codes zip"
+                            onClick={(e) => handleRedownload(e, c)}
+                          >
+                            <IconDownload width={15} height={15} />
+                          </button>
+                          <button
+                            className="icon-action-btn danger"
+                            title="Delete campaign"
+                            onClick={(e) => handleDelete(e, c)}
+                          >
+                            <IconTrash width={15} height={15} />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

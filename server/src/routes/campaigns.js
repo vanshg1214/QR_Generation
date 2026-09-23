@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { pool } from "../db.js";
 import { requireAuth } from "../auth.js";
+import QRCode from "qrcode";
+import archiver from "archiver";
 
 export const campaignRoutes = Router();
 
@@ -208,4 +210,86 @@ campaignRoutes.patch("/campaigns/:id/links/:linkId", requireAuth, async (req, re
     return res.status(404).json({ error: "Link not found" });
   }
   res.json({ ok: true });
+});
+
+campaignRoutes.delete("/campaigns/:id", requireAuth, async (req, res) => {
+  const campaignId = Number(req.params.id);
+  if (!Number.isInteger(campaignId)) {
+    return res.status(400).json({ error: "Invalid campaign id" });
+  }
+  const result = await pool.query("DELETE FROM campaigns WHERE id = $1", [campaignId]);
+  if (result.rowCount === 0) {
+    return res.status(404).json({ error: "Campaign not found" });
+  }
+  res.json({ ok: true });
+});
+
+function sanitizeFilename(name) {
+  return name.replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "") || "item";
+}
+
+function uniqueNamer() {
+  const used = new Map();
+  return (rawName) => {
+    const base = sanitizeFilename(rawName);
+    const count = used.get(base) || 0;
+    used.set(base, count + 1);
+    return count === 0 ? base : `${base}_${count + 1}`;
+  };
+}
+
+campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, res) => {
+  const campaignId = Number(req.params.id);
+  if (!Number.isInteger(campaignId)) {
+    return res.status(400).json({ error: "Invalid campaign id" });
+  }
+
+  const { rows: campaignRows } = await pool.query("SELECT name FROM campaigns WHERE id = $1", [campaignId]);
+  if (!campaignRows[0]) {
+    return res.status(404).json({ error: "Campaign not found" });
+  }
+  const campaignName = campaignRows[0].name;
+
+  const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+
+  const { rows } = await pool.query(
+    `SELECT p.name AS person_name, cl.label AS link_label, co.code
+     FROM codes co
+     JOIN people p ON p.id = co.person_id
+     JOIN campaign_links cl ON cl.id = co.campaign_link_id
+     WHERE p.campaign_id = $1
+     ORDER BY LOWER(p.name) ASC, cl.position ASC`,
+    [campaignId]
+  );
+
+  if (!rows.length) {
+    return res.status(404).json({ error: "No QR codes found for this campaign" });
+  }
+
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader("Content-Disposition", `attachment; filename="${sanitizeFilename(campaignName)}-qr-codes.zip"`);
+
+  const archive = archiver("zip", { zlib: { level: 9 } });
+  archive.on("error", (err) => res.status(500).end(String(err)));
+  archive.pipe(res);
+
+  // Group by person
+  const byPerson = new Map();
+  for (const row of rows) {
+    if (!byPerson.has(row.person_name)) byPerson.set(row.person_name, []);
+    byPerson.get(row.person_name).push({ label: row.link_label, code: row.code });
+  }
+
+  const personFolderName = uniqueNamer();
+  for (const [personName, links] of byPerson) {
+    const folder = personFolderName(personName);
+    const linkFileName = uniqueNamer();
+    for (const { label, code } of links) {
+      const url = `${publicBaseUrl}/r/${code}`;
+      const pngBuffer = await QRCode.toBuffer(url, { width: 512, margin: 2 });
+      archive.append(pngBuffer, { name: `${folder}/${linkFileName(label)}.png` });
+    }
+  }
+
+  await archive.finalize();
 });

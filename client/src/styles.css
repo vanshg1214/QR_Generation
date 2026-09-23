@@ -605,3 +605,40 @@ tbody tr:hover {
   border-left: 3px solid var(--primary-soft);
   padding-left: 12px;
 }
+
+/* Campaign row action buttons */
+.row-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.icon-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 7px;
+  background: var(--primary-light);
+  color: var(--primary);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.icon-action-btn:hover {
+  background: var(--primary-soft);
+  color: var(--primary-hover);
+}
+
+.icon-action-btn.danger {
+  background: #fef2f2;
+  color: var(--danger);
+  border-color: #fecaca;
+}
+
+.icon-action-btn.danger:hover {
+  background: #fee2e2;
+}

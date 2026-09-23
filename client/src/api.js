@@ -1,5 +1,6 @@
-// Hardcoded on purpose -- no env var here. If the API's URL ever changes, update this directly.
-export const API_BASE = "https://qr-generation-ag74.onrender.com";
+// Use the Vite environment variable if available, otherwise default to empty string
+// which will use the Vite proxy during local development.
+export const API_BASE = import.meta.env.VITE_API_URL || "";
 
 async function request(path, options = {}) {
   const res = await fetch(`${API_BASE}/api${path}`, {
@@ -35,6 +36,12 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(fields),
     }).then((r) => r.json()),
+
+  deleteCampaign: (id) =>
+    request(`/campaigns/${id}`, { method: "DELETE" }).then((r) => r.json()),
+
+  downloadQrZip: (id) =>
+    request(`/campaigns/${id}/download-qr.zip`).then((r) => r.blob()),
 
   async createCampaign({ campaignName, links, file }) {
     const formData = new FormData();
