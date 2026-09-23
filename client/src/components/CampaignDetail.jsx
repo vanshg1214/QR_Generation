@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "react-hot-toast";
 import { api, API_BASE } from "../api.js";
 import PeopleTable from "./PeopleTable.jsx";
 import Logo from "./Logo.jsx";
@@ -7,19 +8,17 @@ import { IconUsers, IconLink, IconEye, IconScan, IconArrowLeft } from "./icons.j
 function LinkEditRow({ campaignId, link, onSaved }) {
   const [labelDraft, setLabelDraft] = useState(link.label);
   const [urlDraft, setUrlDraft] = useState(link.destinationUrl);
-  const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
 
   async function handleSave(e) {
     e.preventDefault();
     setSaving(true);
-    setStatus("");
     try {
       await api.updateLink(campaignId, link.id, { label: labelDraft, destinationUrl: urlDraft });
-      setStatus("Saved.");
+      toast.success("Link saved.");
       onSaved?.();
     } catch (err) {
-      setStatus(err.message);
+      toast.error(err.message);
     } finally {
       setSaving(false);
     }
@@ -43,7 +42,6 @@ function LinkEditRow({ campaignId, link, onSaved }) {
       <button type="submit" disabled={saving}>
         {saving ? "Saving…" : "Save"}
       </button>
-      {status && <span className="muted small">{status}</span>}
     </form>
   );
 }
@@ -54,10 +52,8 @@ export default function CampaignDetail({ campaignId, onBack }) {
   const [people, setPeople] = useState([]);
   const [summary, setSummary] = useState({ totalPeople: 0, totalLinks: 0, totalViewed: 0, totalScans: 0 });
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
 
   const [nameDraft, setNameDraft] = useState("");
-  const [nameSaveStatus, setNameSaveStatus] = useState("");
   const [savingName, setSavingName] = useState(false);
 
   const refresh = useCallback(() => {
@@ -70,9 +66,8 @@ export default function CampaignDetail({ campaignId, onBack }) {
         setPeople(data.people);
         setSummary(data.summary);
         setNameDraft(data.campaign.name);
-        setError("");
       })
-      .catch((err) => setError(err.message))
+      .catch((err) => toast.error(err.message))
       .finally(() => setLoading(false));
   }, [campaignId]);
 
@@ -83,13 +78,12 @@ export default function CampaignDetail({ campaignId, onBack }) {
   async function handleSaveName(e) {
     e.preventDefault();
     setSavingName(true);
-    setNameSaveStatus("");
     try {
       await api.updateCampaign(campaignId, { name: nameDraft });
-      setNameSaveStatus("Saved.");
+      toast.success("Campaign title saved.");
       refresh();
     } catch (err) {
-      setNameSaveStatus(err.message);
+      toast.error(err.message);
     } finally {
       setSavingName(false);
     }
@@ -118,8 +112,6 @@ export default function CampaignDetail({ campaignId, onBack }) {
           <span className="eyebrow">Campaign</span>
           <h2 className="hero-title">{campaign?.name}</h2>
         </div>
-
-        {error && <p className="error-text">{error}</p>}
 
         <div className="stats-row">
           <div className="stat">
@@ -161,7 +153,6 @@ export default function CampaignDetail({ campaignId, onBack }) {
               {savingName ? "Saving…" : "Save"}
             </button>
           </form>
-          {nameSaveStatus && <p className="muted">{nameSaveStatus}</p>}
         </section>
 
         <section className="card">

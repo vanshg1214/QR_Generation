@@ -1,4 +1,6 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useState, useEffect } from "react";
+
+const PAGE_SIZE = 50;
 
 function formatDate(value) {
   if (!value) return "—";
@@ -12,6 +14,12 @@ export default function PeopleTable({ people }) {
   const [sortKey, setSortKey] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
   const [expandedId, setExpandedId] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Reset to page 1 whenever filters/sort change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, sortKey, sortDir]);
 
   const extraColumns = useMemo(() => {
     const keys = new Set();
@@ -61,6 +69,13 @@ export default function PeopleTable({ people }) {
     }
   }
 
+  const paginatedPeople = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, currentPage]);
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
+
   const columnCount = extraColumns.length + 5;
 
   return (
@@ -91,7 +106,7 @@ export default function PeopleTable({ people }) {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((p) => {
+            {paginatedPeople.map((p) => {
               const isExpanded = expandedId === p.id;
               return (
                 <Fragment key={p.id}>
@@ -151,6 +166,29 @@ export default function PeopleTable({ people }) {
           </tbody>
         </table>
       </div>
+      {filtered.length > PAGE_SIZE && (
+        <div className="table-header" style={{ borderTop: "1px solid var(--border)", marginTop: "1rem", paddingTop: "1rem" }}>
+          <button
+            type="button"
+            className="secondary"
+            disabled={currentPage === 1}
+            onClick={() => setCurrentPage((p) => p - 1)}
+          >
+            Previous
+          </button>
+          <span className="muted">
+            Page {currentPage} of {totalPages}
+          </span>
+          <button
+            type="button"
+            className="secondary"
+            disabled={currentPage === totalPages}
+            onClick={() => setCurrentPage((p) => p + 1)}
+          >
+            Next
+          </button>
+        </div>
+      )}
     </section>
   );
 }

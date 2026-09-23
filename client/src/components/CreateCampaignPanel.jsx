@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { toast } from "react-hot-toast";
 import { api, downloadBlob } from "../api.js";
 
 const MAX_LINKS = 10;
@@ -11,7 +12,6 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
   const fileInput = useRef(null);
   const [campaignName, setCampaignName] = useState("");
   const [links, setLinks] = useState([emptyLink()]);
-  const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
 
   function updateLink(index, field, value) {
@@ -30,21 +30,21 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
     e.preventDefault();
     const file = fileInput.current?.files?.[0];
     if (!file) {
-      setStatus("Choose an Excel file first.");
+      toast.error("Choose an Excel file first.");
       return;
     }
     setBusy(true);
-    setStatus("Processing… generating QR codes for every person and every link.");
+    const toastId = toast.loading("Processing… generating QR codes for every person and every link.");
     try {
       const blob = await api.createCampaign({ campaignName, links, file });
       downloadBlob(blob, `${campaignName.trim().replace(/[^a-z0-9]+/gi, "_")}-qr-codes.zip`);
-      setStatus("Done — QR codes downloaded as a zip (one folder per person).");
+      toast.success("Done — QR codes downloaded as a zip.", { id: toastId });
       setCampaignName("");
       setLinks([emptyLink()]);
       fileInput.current.value = "";
       onCreated?.();
     } catch (err) {
-      setStatus(err.message);
+      toast.error(err.message, { id: toastId });
     } finally {
       setBusy(false);
     }
@@ -118,7 +118,6 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
           {busy ? "Working…" : "Create Campaign & Generate QR Codes"}
         </button>
       </form>
-      {status && <p className="muted">{status}</p>}
     </section>
   );
 }
