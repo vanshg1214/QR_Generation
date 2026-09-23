@@ -81,6 +81,33 @@ export default function CampaignCharts({ people, summary, links, onPersonClick }
       .sort((a, b) => b.scanCount - a.scanCount);
   }, [people]);
 
+  // 5. Time of Day Analysis
+  const timeOfDayData = useMemo(() => {
+    let morning = 0;   // 6am - 11:59am
+    let afternoon = 0; // 12pm - 5:59pm
+    let evening = 0;   // 6pm - 11:59pm
+    let night = 0;     // 12am - 5:59am
+
+    for (const person of people) {
+      for (const link of person.links) {
+        for (const ts of link.scans) {
+          const hour = new Date(ts).getHours();
+          if (hour >= 6 && hour < 12) morning++;
+          else if (hour >= 12 && hour < 18) afternoon++;
+          else if (hour >= 18 && hour <= 23) evening++;
+          else night++;
+        }
+      }
+    }
+
+    return [
+      { name: "Morning", scans: morning },
+      { name: "Afternoon", scans: afternoon },
+      { name: "Evening", scans: evening },
+      { name: "Night", scans: night },
+    ];
+  }, [people]);
+
   const hasScans = summary.totalScans > 0;
 
   return (
@@ -176,6 +203,26 @@ export default function CampaignCharts({ people, summary, links, onPersonClick }
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Bar - Time of Day */}
+          {hasScans && (
+            <div className="chart-card">
+              <h3 className="chart-title">Time of Day</h3>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={timeOfDayData} margin={{ top: 12, right: 8, left: -16, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8e4" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 12, fill: MUTED }} axisLine={false} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: MUTED }} axisLine={false} tickLine={false} />
+                  <Tooltip content={<ChartTooltip />} />
+                  <Bar dataKey="scans" name="Scans" fill={ACCENT} radius={[4, 4, 0, 0]}>
+                    {timeOfDayData.map((_, i) => (
+                      <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           )}
 
