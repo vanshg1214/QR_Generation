@@ -74,12 +74,11 @@ export default function CampaignCharts({ people, summary, links }) {
 
 
 
-  // 4. Per-person scan leaderboard (top 10)
+  // 4. Per-person scan leaderboard
   const topPeople = useMemo(() => {
     return [...people]
-      .sort((a, b) => b.scanCount - a.scanCount)
-      .slice(0, 10)
-      .map((p) => ({ name: p.name.length > 18 ? p.name.slice(0, 16) + "…" : p.name, scans: p.scanCount }));
+      .filter((p) => p.scanCount > 0)
+      .sort((a, b) => b.scanCount - a.scanCount);
   }, [people]);
 
   const hasScans = summary.totalScans > 0;
@@ -161,23 +160,18 @@ export default function CampaignCharts({ people, summary, links }) {
             </div>
           )}
 
-          {/* Bar – Top People */}
-          {topPeople.some((p) => p.scans > 0) && (
-            <div className="chart-card chart-card-wide">
-              <h3 className="chart-title">Top People by Scans</h3>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={topPeople} layout="vertical" margin={{ top: 0, right: 12, left: 10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8e4" horizontal={false} />
-                  <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: MUTED }} axisLine={false} tickLine={false} />
-                  <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fill: PRIMARY }} axisLine={false} tickLine={false} width={110} />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Bar dataKey="scans" name="Scans" fill={PRIMARY} radius={[0, 5, 5, 0]}>
-                    {topPeople.map((_, i) => (
-                      <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+          {/* List – Top People */}
+          {topPeople.length > 0 && (
+            <div className="chart-card">
+              <h3 className="chart-title">Most Interested People</h3>
+              <div className="leaderboard-list">
+                {topPeople.map((p) => (
+                  <div key={p.id} className="leaderboard-item">
+                    <span className="leaderboard-name">{p.name}</span>
+                    <span className="leaderboard-scans">{p.scanCount}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
