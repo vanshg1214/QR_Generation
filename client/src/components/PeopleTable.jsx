@@ -1,7 +1,5 @@
 import { Fragment, useMemo, useState, useEffect } from "react";
 
-const PAGE_SIZE = 50;
-
 function formatDate(value) {
   if (!value) return "—";
   const d = new Date(value);
@@ -15,11 +13,12 @@ export default function PeopleTable({ people }) {
   const [sortDir, setSortDir] = useState("asc");
   const [expandedId, setExpandedId] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
-  // Reset to page 1 whenever filters/sort change
+  // Reset to page 1 whenever filters, sort, or page size change
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, sortKey, sortDir]);
+  }, [search, sortKey, sortDir, pageSize]);
 
   const extraColumns = useMemo(() => {
     const keys = new Set();
@@ -70,11 +69,11 @@ export default function PeopleTable({ people }) {
   }
 
   const paginatedPeople = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE;
-    return filtered.slice(start, start + PAGE_SIZE);
-  }, [filtered, currentPage]);
+    const start = (currentPage - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, currentPage, pageSize]);
 
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
+  const totalPages = Math.ceil(filtered.length / pageSize) || 1;
 
   const columnCount = extraColumns.length + 5;
 
@@ -166,29 +165,52 @@ export default function PeopleTable({ people }) {
           </tbody>
         </table>
       </div>
-      {filtered.length > PAGE_SIZE && (
-        <div className="table-header" style={{ borderTop: "1px solid var(--border)", marginTop: "1rem", paddingTop: "1rem" }}>
-          <button
-            type="button"
-            className="secondary"
-            disabled={currentPage === 1}
-            onClick={() => setCurrentPage((p) => p - 1)}
+      <div className="table-header" style={{ borderTop: "1px solid var(--border)", marginTop: "1rem", paddingTop: "1rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span className="muted" style={{ fontSize: "0.85rem" }}>Rows per page:</span>
+          <select
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+            style={{
+              padding: "4px 8px",
+              borderRadius: "6px",
+              border: "1px solid var(--border)",
+              background: "#fff",
+              fontSize: "0.85rem",
+              cursor: "pointer"
+            }}
           >
-            Previous
-          </button>
-          <span className="muted">
-            Page {currentPage} of {totalPages}
-          </span>
-          <button
-            type="button"
-            className="secondary"
-            disabled={currentPage === totalPages}
-            onClick={() => setCurrentPage((p) => p + 1)}
-          >
-            Next
-          </button>
+            <option value={10}>10</option>
+            <option value={20}>20</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
         </div>
-      )}
+        
+        {filtered.length > pageSize && (
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <button
+              type="button"
+              className="secondary"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage((p) => p - 1)}
+            >
+              Previous
+            </button>
+            <span className="muted">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              type="button"
+              className="secondary"
+              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage((p) => p + 1)}
+            >
+              Next
+            </button>
+          </div>
+        )}
+      </div>
     </section>
   );
 }

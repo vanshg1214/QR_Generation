@@ -207,7 +207,9 @@ export default function CampaignDetail({ campaignId, onBack }) {
           </div>
         </section>
 
-        <section className="card" style={{ borderColor: "var(--danger)", borderWidth: 1 }}>
+        <PeopleTable people={people} />
+
+        <section className="card" style={{ borderColor: "var(--danger)", borderWidth: 1, marginTop: "18px" }}>
           <span className="eyebrow" style={{ color: "var(--danger)" }}>Danger Zone</span>
           <h2>Delete Campaign</h2>
           <p className="muted">Permanently removes all people, QR codes, and scan history for this campaign. This action cannot be undone.</p>
@@ -219,8 +221,6 @@ export default function CampaignDetail({ campaignId, onBack }) {
             Delete This Campaign
           </button>
         </section>
-
-        <PeopleTable people={people} />
 
         <p className="footer-note">LINK-2-QR — bulk QR campaigns &amp; scan tracking</p>
       </div>
