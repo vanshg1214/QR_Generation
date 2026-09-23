@@ -643,6 +643,39 @@ tbody tr:hover {
   background: #fee2e2;
 }
 
+/* Tabs */
+.campaign-tabs {
+  display: flex;
+  gap: 16px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+  margin-top: 10px;
+}
+
+.tab-button {
+  background: transparent;
+  color: var(--muted);
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 10px 16px;
+  border: none;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-button:hover {
+  background: transparent;
+  color: var(--primary);
+  border-bottom-color: var(--primary-soft);
+}
+
+.tab-button.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
 /* Analytics charts */
 .analytics-section {
   margin-bottom: 18px;

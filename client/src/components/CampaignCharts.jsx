@@ -1,8 +1,7 @@
 import { useMemo } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend,
-  LineChart, Line,
+  PieChart, Pie, Cell, Legend
 } from "recharts";
 
 const PRIMARY = "#123c2c";
@@ -69,28 +68,11 @@ export default function CampaignCharts({ people, summary, links }) {
       }
     }
     return Object.entries(counts)
-      .map(([label, scans]) => ({ label, scans }))
-      .sort((a, b) => b.scans - a.scans);
+      .map(([label, scans]) => ({ name: label, value: scans }))
+      .sort((a, b) => b.value - a.value);
   }, [people]);
 
-  // 3. Scans over time (line) — group by date
-  const scansOverTime = useMemo(() => {
-    const byDate = {};
-    for (const person of people) {
-      for (const link of person.links) {
-        for (const ts of link.scans) {
-          const date = new Date(ts).toLocaleDateString("en-GB", {
-            day: "2-digit", month: "short",
-          });
-          byDate[ts.slice(0, 10)] = byDate[ts.slice(0, 10)] || { date, scans: 0 };
-          byDate[ts.slice(0, 10)].scans++;
-        }
-      }
-    }
-    return Object.entries(byDate)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([, v]) => v);
-  }, [people]);
+
 
   // 4. Per-person scan leaderboard (top 10)
   const topPeople = useMemo(() => {
@@ -148,46 +130,33 @@ export default function CampaignCharts({ people, summary, links }) {
             </ResponsiveContainer>
           </div>
 
-          {/* Bar – Scans by Link */}
+          {/* Pie – Scans by Link */}
           {scansByLink.length > 0 && (
             <div className="chart-card">
-              <h3 className="chart-title">Scans by Link</h3>
+              <h3 className="chart-title">Link Distribution</h3>
               <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={scansByLink} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8e4" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 12, fill: MUTED }} axisLine={false} tickLine={false} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: MUTED }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Bar dataKey="scans" name="Scans" fill={ACCENT} radius={[5, 5, 0, 0]}>
+                <PieChart>
+                  <Pie
+                    data={scansByLink}
+                    dataKey="value"
+                    innerRadius={0}
+                    outerRadius={90}
+                    labelLine={false}
+                    label={PieLabel}
+                  >
                     {scansByLink.map((_, i) => (
                       <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
                     ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-
-          {/* Line – Scans over Time */}
-          {scansOverTime.length > 1 && (
-            <div className="chart-card chart-card-wide">
-              <h3 className="chart-title">Scans Over Time</h3>
-              <ResponsiveContainer width="100%" height={200}>
-                <LineChart data={scansOverTime} margin={{ top: 4, right: 12, left: -16, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8e4" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: MUTED }} axisLine={false} tickLine={false} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: MUTED }} axisLine={false} tickLine={false} />
+                  </Pie>
                   <Tooltip content={<ChartTooltip />} />
-                  <Line
-                    type="monotone"
-                    dataKey="scans"
-                    name="Scans"
-                    stroke={ACCENT}
-                    strokeWidth={2.5}
-                    dot={{ fill: ACCENT, r: 4, strokeWidth: 0 }}
-                    activeDot={{ r: 6, fill: PRIMARY }}
+                  <Legend
+                    formatter={(value, entry) => (
+                      <span style={{ color: PRIMARY, fontSize: "0.82rem" }}>
+                        {value} ({entry.payload.value})
+                      </span>
+                    )}
                   />
-                </LineChart>
+                </PieChart>
               </ResponsiveContainer>
             </div>
           )}

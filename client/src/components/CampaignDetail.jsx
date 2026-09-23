@@ -56,6 +56,8 @@ export default function CampaignDetail({ campaignId, onBack }) {
 
   const [nameDraft, setNameDraft] = useState("");
   const [savingName, setSavingName] = useState(false);
+  
+  const [activeTab, setActiveTab] = useState("people"); // "people" | "analytics"
 
   const refresh = useCallback(() => {
     setLoading(true);
@@ -168,8 +170,6 @@ export default function CampaignDetail({ campaignId, onBack }) {
           </div>
         </div>
 
-        <CampaignCharts people={people} summary={summary} links={links} />
-
         <section className="card">
           <span className="eyebrow">Settings</span>
           <h2>Campaign Title</h2>
@@ -210,7 +210,28 @@ export default function CampaignDetail({ campaignId, onBack }) {
           </div>
         </section>
 
-        <PeopleTable people={people} />
+        <div className="campaign-tabs">
+          <button 
+            className={`tab-button ${activeTab === "people" ? "active" : ""}`}
+            onClick={() => setActiveTab("people")}
+          >
+            People List
+          </button>
+          <button 
+            className={`tab-button ${activeTab === "analytics" ? "active" : ""}`}
+            onClick={() => setActiveTab("analytics")}
+          >
+            Analytics
+          </button>
+        </div>
+
+        {activeTab === "people" && (
+          <PeopleTable people={people} />
+        )}
+
+        {activeTab === "analytics" && (
+          <CampaignCharts people={people} summary={summary} links={links} />
+        )}
 
         <section className="card" style={{ borderColor: "var(--danger)", borderWidth: 1, marginTop: "18px" }}>
           <span className="eyebrow" style={{ color: "var(--danger)" }}>Danger Zone</span>
