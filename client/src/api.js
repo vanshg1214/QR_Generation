@@ -1,6 +1,6 @@
-// Use the Vite environment variable if available, otherwise default to empty string
-// which will use the Vite proxy during local development.
-export const API_BASE = import.meta.env.VITE_API_URL || "";
+// Automatically use the Vite proxy during local development,
+// and point to the Render backend in production. No env vars required in Vercel!
+export const API_BASE = import.meta.env.DEV ? "" : "https://qr-generation-ag74.onrender.com";
 
 async function request(path, options = {}) {
   const res = await fetch(`${API_BASE}/api${path}`, {
