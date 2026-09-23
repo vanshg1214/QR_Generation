@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { api, API_BASE, downloadBlob } from "../api.js";
 import PeopleTable from "./PeopleTable.jsx";
+import CampaignCharts from "./CampaignCharts.jsx";
 import Logo from "./Logo.jsx";
 import { IconUsers, IconLink, IconEye, IconScan, IconArrowLeft, IconTrash, IconDownload } from "./icons.jsx";
 
@@ -166,6 +167,8 @@ export default function CampaignDetail({ campaignId, onBack }) {
             </div>
           </div>
         </div>
+
+        <CampaignCharts people={people} summary={summary} links={links} />
 
         <section className="card">
           <span className="eyebrow">Settings</span>
