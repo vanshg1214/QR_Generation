@@ -58,6 +58,7 @@ export default function CampaignDetail({ campaignId, onBack }) {
   const [savingName, setSavingName] = useState(false);
   
   const [activeTab, setActiveTab] = useState("people"); // "people" | "analytics"
+  const [targetPerson, setTargetPerson] = useState(null);
 
   const refresh = useCallback(() => {
     setLoading(true);
@@ -213,7 +214,10 @@ export default function CampaignDetail({ campaignId, onBack }) {
         <div className="campaign-tabs">
           <button 
             className={`tab-button ${activeTab === "people" ? "active" : ""}`}
-            onClick={() => setActiveTab("people")}
+            onClick={() => {
+              setActiveTab("people");
+              setTargetPerson(null);
+            }}
           >
             People List
           </button>
@@ -226,11 +230,23 @@ export default function CampaignDetail({ campaignId, onBack }) {
         </div>
 
         {activeTab === "people" && (
-          <PeopleTable people={people} />
+          <PeopleTable 
+            people={people} 
+            initialSearch={targetPerson ? targetPerson.name : ""}
+            initialExpandedId={targetPerson ? targetPerson.id : null}
+          />
         )}
 
         {activeTab === "analytics" && (
-          <CampaignCharts people={people} summary={summary} links={links} />
+          <CampaignCharts 
+            people={people} 
+            summary={summary} 
+            links={links} 
+            onPersonClick={(p) => {
+              setTargetPerson(p);
+              setActiveTab("people");
+            }}
+          />
         )}
 
         <section className="card" style={{ borderColor: "var(--danger)", borderWidth: 1, marginTop: "18px" }}>

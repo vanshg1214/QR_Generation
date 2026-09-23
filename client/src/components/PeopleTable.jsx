@@ -7,11 +7,11 @@ function formatDate(value) {
   return d.toLocaleString();
 }
 
-export default function PeopleTable({ people }) {
-  const [search, setSearch] = useState("");
+export default function PeopleTable({ people, initialSearch = "", initialExpandedId = null }) {
+  const [search, setSearch] = useState(initialSearch);
   const [sortKey, setSortKey] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
-  const [expandedId, setExpandedId] = useState(null);
+  const [expandedId, setExpandedId] = useState(initialExpandedId);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 

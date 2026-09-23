@@ -48,7 +48,7 @@ function PieLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent }) {
   );
 }
 
-export default function CampaignCharts({ people, summary, links }) {
+export default function CampaignCharts({ people, summary, links, onPersonClick }) {
   // 1. Viewed vs Not Viewed (donut)
   const viewedData = useMemo(() => {
     const viewed = summary.totalViewed;
@@ -166,7 +166,11 @@ export default function CampaignCharts({ people, summary, links }) {
               <h3 className="chart-title">Most Interested People</h3>
               <div className="leaderboard-list">
                 {topPeople.map((p) => (
-                  <div key={p.id} className="leaderboard-item">
+                  <div 
+                    key={p.id} 
+                    className="leaderboard-item clickable"
+                    onClick={() => onPersonClick && onPersonClick(p)}
+                  >
                     <span className="leaderboard-name">{p.name}</span>
                     <span className="leaderboard-scans">{p.scanCount}</span>
                   </div>
