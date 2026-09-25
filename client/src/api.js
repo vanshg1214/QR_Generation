@@ -43,11 +43,15 @@ export const api = {
   downloadQrZip: (id) =>
     request(`/campaigns/${id}/download-qr.zip`).then((r) => r.blob()),
 
-  async createCampaign({ campaignName, links, file }) {
+  async createCampaign({ campaignName, links, file, graphic, boxes, signatureName, signatureTitle }) {
     const formData = new FormData();
     formData.append("campaignName", campaignName);
     formData.append("links", JSON.stringify(links));
     formData.append("file", file);
+    if (graphic) formData.append("graphic", graphic);
+    if (boxes) formData.append("boxes", JSON.stringify(boxes));
+    if (signatureName) formData.append("signatureName", signatureName);
+    if (signatureTitle) formData.append("signatureTitle", signatureTitle);
     const res = await fetch(`${API_BASE}/api/upload`, {
       method: "POST",
       credentials: "include",

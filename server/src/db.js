@@ -22,12 +22,22 @@ setInterval(() => {
   pool.query("SELECT 1").catch(() => {});
 }, 4 * 60 * 1000);
 
+// pg emits 'error' on the pool when an idle client's connection is dropped
+// (Supabase silently closing it, a network blip, etc). An EventEmitter with
+// no 'error' listener throws and crashes the whole process on the next such
+// event -- this just logs it and lets the pool replace the connection.
+pool.on("error", (err) => {
+  console.error("Postgres pool idle client error:", err.message);
+});
+
 export async function initSchema() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS campaigns (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      graphic_data BYTEA,
+      graphic_mime TEXT
     );
 
     CREATE TABLE IF NOT EXISTS campaign_links (
@@ -69,11 +79,29 @@ export async function initSchema() {
       value TEXT
     );
 
+    -- Where a per-person QR code should be stamped inside a campaign's letter
+    -- graphic, as fractions (0..1, top-left origin) of the graphic's dimensions.
+    CREATE TABLE IF NOT EXISTS letter_qr_boxes (
+      id SERIAL PRIMARY KEY,
+      campaign_link_id INTEGER NOT NULL REFERENCES campaign_links(id) ON DELETE CASCADE,
+      x DOUBLE PRECISION NOT NULL,
+      y DOUBLE PRECISION NOT NULL,
+      width DOUBLE PRECISION NOT NULL,
+      height DOUBLE PRECISION NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
     CREATE INDEX IF NOT EXISTS idx_codes_person_id ON codes(person_id);
     CREATE INDEX IF NOT EXISTS idx_codes_campaign_link_id ON codes(campaign_link_id);
     CREATE INDEX IF NOT EXISTS idx_people_campaign_id ON people(campaign_id);
     CREATE INDEX IF NOT EXISTS idx_campaign_links_campaign_id ON campaign_links(campaign_id);
+    CREATE INDEX IF NOT EXISTS idx_letter_qr_boxes_campaign_link_id ON letter_qr_boxes(campaign_link_id);
   `);
+
+  await pool.query("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS graphic_data BYTEA");
+  await pool.query("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS graphic_mime TEXT");
+  await pool.query("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS signature_name TEXT");
+  await pool.query("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS signature_title TEXT");
 
   await migrateSingleLinkSchema();
 

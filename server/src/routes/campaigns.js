@@ -3,6 +3,8 @@ import { pool } from "../db.js";
 import { requireAuth } from "../auth.js";
 import QRCode from "qrcode";
 import archiver from "archiver";
+import { mergeLetterPdfs } from "../pdf.js";
+import { buildPersonLetter } from "../letters.js";
 
 export const campaignRoutes = Router();
 
@@ -244,16 +246,23 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
     return res.status(400).json({ error: "Invalid campaign id" });
   }
 
-  const { rows: campaignRows } = await pool.query("SELECT name FROM campaigns WHERE id = $1", [campaignId]);
+  const { rows: campaignRows } = await pool.query(
+    "SELECT name, graphic_data, graphic_mime, signature_name, signature_title FROM campaigns WHERE id = $1",
+    [campaignId]
+  );
   if (!campaignRows[0]) {
     return res.status(404).json({ error: "Campaign not found" });
   }
   const campaignName = campaignRows[0].name;
+  const graphicData = campaignRows[0].graphic_data;
+  const graphicMime = campaignRows[0].graphic_mime;
+  const signatureName = campaignRows[0].signature_name;
+  const signatureTitle = campaignRows[0].signature_title;
 
   const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
 
   const { rows } = await pool.query(
-    `SELECT p.name AS person_name, cl.label AS link_label, co.code
+    `SELECT p.name AS person_name, cl.label AS link_label, cl.id AS campaign_link_id, co.code
      FROM codes co
      JOIN people p ON p.id = co.person_id
      JOIN campaign_links cl ON cl.id = co.campaign_link_id
@@ -266,6 +275,21 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
     return res.status(404).json({ error: "No QR codes found for this campaign" });
   }
 
+  const { rows: boxRows } = await pool.query(
+    `SELECT lqb.campaign_link_id, lqb.x, lqb.y, lqb.width, lqb.height
+     FROM letter_qr_boxes lqb
+     JOIN campaign_links cl ON cl.id = lqb.campaign_link_id
+     WHERE cl.campaign_id = $1`,
+    [campaignId]
+  );
+  const boxes = boxRows.map((r) => ({
+    campaignLinkId: r.campaign_link_id,
+    x: r.x,
+    y: r.y,
+    width: r.width,
+    height: r.height,
+  }));
+
   res.setHeader("Content-Type", "application/zip");
   res.setHeader("Content-Disposition", `attachment; filename="${sanitizeFilename(campaignName)}-qr-codes.zip"`);
 
@@ -277,9 +301,12 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
   const byPerson = new Map();
   for (const row of rows) {
     if (!byPerson.has(row.person_name)) byPerson.set(row.person_name, []);
-    byPerson.get(row.person_name).push({ label: row.link_label, code: row.code });
+    byPerson
+      .get(row.person_name)
+      .push({ label: row.link_label, code: row.code, campaignLinkId: row.campaign_link_id });
   }
 
+  const letterPdfs = [];
   const personFolderName = uniqueNamer();
   for (const [personName, links] of byPerson) {
     const folder = personFolderName(personName);
@@ -289,6 +316,26 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
       const pngBuffer = await QRCode.toBuffer(url, { width: 512, margin: 2 });
       archive.append(pngBuffer, { name: `${folder}/${linkFileName(label)}.png` });
     }
+
+    if (graphicData) {
+      const letterBytes = await buildPersonLetter({
+        personName,
+        codesForPerson: links,
+        boxes,
+        graphicData,
+        graphicMime,
+        signatureName,
+        signatureTitle,
+        publicBaseUrl,
+      });
+      archive.append(Buffer.from(letterBytes), { name: `${folder}/Letter.pdf` });
+      letterPdfs.push(letterBytes);
+    }
+  }
+
+  if (letterPdfs.length) {
+    const combinedBytes = await mergeLetterPdfs(letterPdfs);
+    archive.append(Buffer.from(combinedBytes), { name: "All Letters.pdf" });
   }
 
   await archive.finalize();

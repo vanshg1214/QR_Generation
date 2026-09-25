@@ -96,7 +96,8 @@ input[type="text"],
 input[type="password"],
 input[type="url"],
 input[type="search"],
-input[type="file"] {
+input[type="file"],
+select {
   padding: 9px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -570,6 +571,111 @@ tbody tr:hover {
 
 .remove-link-btn {
   white-space: nowrap;
+}
+
+.qr-calibrator {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 560px;
+  padding: 14px;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+.qr-calibrator-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.qr-calibrator-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.qr-calibrator-actions button {
+  padding: 7px 12px;
+  font-size: 0.85rem;
+}
+
+.qr-calibrator-canvas {
+  position: relative;
+  width: 100%;
+  line-height: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  touch-action: none;
+}
+
+.qr-calibrator-canvas img {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  pointer-events: none;
+}
+
+.qr-box {
+  position: absolute;
+  border: 2px dashed var(--accent);
+  background: rgba(31, 122, 77, 0.12);
+  cursor: move;
+  min-width: 24px;
+  min-height: 24px;
+}
+
+.qr-box-pattern {
+  position: absolute;
+  inset: 6px;
+  background-image: repeating-conic-gradient(var(--primary) 0% 25%, transparent 0% 50%);
+  background-size: 8px 8px;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.qr-box-controls {
+  position: absolute;
+  top: -28px;
+  left: 0;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  cursor: default;
+}
+
+.qr-box-controls select {
+  padding: 3px 6px;
+  font-size: 0.75rem;
+  border-radius: 6px;
+  max-width: 160px;
+}
+
+.qr-box-remove {
+  padding: 0;
+  width: 22px;
+  height: 22px;
+  line-height: 1;
+  border-radius: 6px;
+  background: var(--danger);
+  font-size: 0.95rem;
+}
+
+.qr-box-handle {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #fff;
+  cursor: nwse-resize;
 }
 
 .link-detail-row {

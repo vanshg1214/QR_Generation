@@ -6,12 +6,17 @@ import archiver from "archiver";
 import { customAlphabet } from "nanoid";
 import { withTransaction } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { mergeLetterPdfs } from "../pdf.js";
+import { buildPersonLetter } from "../letters.js";
 
 export const uploadRoutes = Router();
 
 const upload = multer({ storage: multer.memoryStorage() });
+const GRAPHIC_MAX_BYTES = 20 * 1024 * 1024;
+const ALLOWED_GRAPHIC_MIMES = new Set(["image/png", "image/jpeg"]);
 
 const MAX_LINKS = 10;
+const MAX_SIGNATURE_FIELD_LENGTH = 200;
 
 // Unambiguous alphabet (no 0/O, 1/I/l) since these codes may occasionally be typed manually.
 const nanoid = customAlphabet("23456789ABCDEFGHJKLMNPQRSTUVWXYZ", 8);
@@ -55,9 +60,28 @@ function uniqueNamer() {
   };
 }
 
-uploadRoutes.post("/upload", requireAuth, upload.single("file"), async (req, res) => {
-  if (!req.file) {
+uploadRoutes.post(
+  "/upload",
+  requireAuth,
+  upload.fields([
+    { name: "file", maxCount: 1 },
+    { name: "graphic", maxCount: 1 },
+  ]),
+  async (req, res) => {
+  const excelFile = req.files?.file?.[0];
+  if (!excelFile) {
     return res.status(400).json({ error: "No file uploaded" });
+  }
+  req.file = excelFile; // downstream code below reads req.file
+
+  const graphicFile = req.files?.graphic?.[0];
+  if (graphicFile) {
+    if (!ALLOWED_GRAPHIC_MIMES.has(graphicFile.mimetype)) {
+      return res.status(400).json({ error: "The letter graphic must be a PNG or JPEG image" });
+    }
+    if (graphicFile.size > GRAPHIC_MAX_BYTES) {
+      return res.status(400).json({ error: "The letter graphic must be 20MB or smaller" });
+    }
   }
 
   const { campaignName } = req.body || {};
@@ -86,6 +110,40 @@ uploadRoutes.post("/upload", requireAuth, upload.single("file"), async (req, res
     }
   }
 
+  const signatureName = (req.body.signatureName || "").trim();
+  const signatureTitle = (req.body.signatureTitle || "").trim();
+  if (signatureName.length > MAX_SIGNATURE_FIELD_LENGTH || signatureTitle.length > MAX_SIGNATURE_FIELD_LENGTH) {
+    return res.status(400).json({ error: "Signature name/title must be 200 characters or fewer" });
+  }
+
+  let boxes;
+  try {
+    boxes = JSON.parse(req.body.boxes || "[]");
+  } catch {
+    return res.status(400).json({ error: "boxes must be valid JSON" });
+  }
+  if (!Array.isArray(boxes)) {
+    return res.status(400).json({ error: "boxes must be an array" });
+  }
+  for (const box of boxes) {
+    const fieldsOk =
+      Number.isInteger(box.linkIndex) &&
+      box.linkIndex >= 0 &&
+      box.linkIndex < links.length &&
+      [box.x, box.y, box.width, box.height].every((n) => typeof n === "number" && Number.isFinite(n)) &&
+      box.x >= 0 &&
+      box.x <= 1 &&
+      box.y >= 0 &&
+      box.y <= 1 &&
+      box.width > 0 &&
+      box.height > 0 &&
+      box.x + box.width <= 1.02 &&
+      box.y + box.height <= 1.02;
+    if (!fieldsOk) {
+      return res.status(400).json({ error: "A letter QR box is invalid" });
+    }
+  }
+
   const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
 
   let sheetRows;
@@ -103,10 +161,18 @@ uploadRoutes.post("/upload", requireAuth, upload.single("file"), async (req, res
 
   const created = await withTransaction(async (client) => {
     const { rows: campaignRows } = await client.query(
-      "INSERT INTO campaigns (name) VALUES ($1) RETURNING id",
-      [campaignName.trim()]
+      "INSERT INTO campaigns (name, signature_name, signature_title) VALUES ($1, $2, $3) RETURNING id",
+      [campaignName.trim(), signatureName, signatureTitle]
     );
     const campaignId = campaignRows[0].id;
+
+    if (graphicFile) {
+      await client.query("UPDATE campaigns SET graphic_data = $1, graphic_mime = $2 WHERE id = $3", [
+        graphicFile.buffer,
+        graphicFile.mimetype,
+        campaignId,
+      ]);
+    }
 
     const linkRows = [];
     for (let i = 0; i < links.length; i++) {
@@ -115,6 +181,16 @@ uploadRoutes.post("/upload", requireAuth, upload.single("file"), async (req, res
         [campaignId, links[i].label.trim(), links[i].destinationUrl, i]
       );
       linkRows.push(rows[0]);
+    }
+
+    const resolvedBoxes = [];
+    for (const box of boxes) {
+      const link = linkRows[box.linkIndex];
+      await client.query(
+        "INSERT INTO letter_qr_boxes (campaign_link_id, x, y, width, height) VALUES ($1, $2, $3, $4, $5)",
+        [link.id, box.x, box.y, box.width, box.height]
+      );
+      resolvedBoxes.push({ campaignLinkId: link.id, x: box.x, y: box.y, width: box.width, height: box.height });
     }
 
     const people = [];
@@ -137,11 +213,11 @@ uploadRoutes.post("/upload", requireAuth, upload.single("file"), async (req, res
           "INSERT INTO codes (person_id, campaign_link_id, code) VALUES ($1, $2, $3)",
           [personId, link.id, code]
         );
-        codes.push({ label: link.label, code });
+        codes.push({ label: link.label, code, campaignLinkId: link.id });
       }
       people.push({ name, codes });
     }
-    return { campaignId, people };
+    return { campaignId, people, resolvedBoxes };
   });
 
   if (!created.people.length) {
@@ -157,6 +233,7 @@ uploadRoutes.post("/upload", requireAuth, upload.single("file"), async (req, res
   });
   archive.pipe(res);
 
+  const letterPdfs = [];
   const personFolderName = uniqueNamer();
   for (const person of created.people) {
     const folder = personFolderName(person.name);
@@ -166,6 +243,26 @@ uploadRoutes.post("/upload", requireAuth, upload.single("file"), async (req, res
       const pngBuffer = await QRCode.toBuffer(url, { width: 512, margin: 2 });
       archive.append(pngBuffer, { name: `${folder}/${linkFileName(label)}.png` });
     }
+
+    if (graphicFile) {
+      const letterBytes = await buildPersonLetter({
+        personName: person.name,
+        codesForPerson: person.codes,
+        boxes: created.resolvedBoxes,
+        graphicData: graphicFile.buffer,
+        graphicMime: graphicFile.mimetype,
+        signatureName,
+        signatureTitle,
+        publicBaseUrl,
+      });
+      archive.append(Buffer.from(letterBytes), { name: `${folder}/Letter.pdf` });
+      letterPdfs.push(letterBytes);
+    }
+  }
+
+  if (letterPdfs.length) {
+    const combinedBytes = await mergeLetterPdfs(letterPdfs);
+    archive.append(Buffer.from(combinedBytes), { name: "All Letters.pdf" });
   }
 
   await archive.finalize();
