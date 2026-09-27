@@ -1,16 +1,19 @@
 import QRCode from "qrcode";
-import { buildLetterPdf } from "./pdf.js";
+import { createLetterBook, addLetterPage, extractLetterPage, saveLetterBook } from "./pdf.js";
 
-// Builds one person's "Dear {name} ji" letter PDF: stamps that person's QR
-// code into every calibrated box that's assigned to one of their links.
+export { createLetterBook, extractLetterPage, saveLetterBook };
+
+// Adds one person's letter page (with their own QR stamped into every
+// calibrated box that's assigned to one of their links) to a shared book
+// created via createLetterBook. Call extractLetterPage/saveLetterBook once
+// all people have been added.
 // codesForPerson: [{ campaignLinkId, code }]
 // boxes: [{ campaignLinkId, x, y, width, height }] (campaign-wide, from letter_qr_boxes)
-export async function buildPersonLetter({
+export async function addPersonLetter({
+  book,
   personName,
   codesForPerson,
   boxes,
-  graphicData,
-  graphicMime,
   signatureName,
   signatureTitle,
   publicBaseUrl,
@@ -25,9 +28,5 @@ export async function buildPersonLetter({
     qrStamps.push({ x: box.x, y: box.y, width: box.width, height: box.height, qrPngBytes });
   }
 
-  return buildLetterPdf(personName, graphicData, graphicMime, {
-    signatureName,
-    signatureTitle,
-    qrStamps,
-  });
+  await addLetterPage(book, personName, { signatureName, signatureTitle, qrStamps });
 }

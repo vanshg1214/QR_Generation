@@ -6,8 +6,7 @@ import archiver from "archiver";
 import { customAlphabet } from "nanoid";
 import { withTransaction } from "../db.js";
 import { requireAuth } from "../auth.js";
-import { mergeLetterPdfs } from "../pdf.js";
-import { buildPersonLetter } from "../letters.js";
+import { createLetterBook, extractLetterPage, saveLetterBook, addPersonLetter } from "../letters.js";
 
 export const uploadRoutes = Router();
 
@@ -227,16 +226,22 @@ uploadRoutes.post(
   res.setHeader("Content-Type", "application/zip");
   res.setHeader("Content-Disposition", `attachment; filename="qr-codes.zip"`);
 
-  const archive = archiver("zip", { zlib: { level: 9 } });
+  const archive = archiver("zip", { zlib: { level: 1 } });
   archive.on("error", (err) => {
     res.status(500).end(String(err));
   });
   archive.pipe(res);
 
-  const letterPdfs = [];
+  // The campaign graphic is embedded ONCE into a shared "book" and reused for
+  // every person's page -- re-embedding a multi-megabyte image per person is
+  // what made this slow (a 28-person campaign took 44s before this).
+  const book = graphicFile ? await createLetterBook(graphicFile.buffer, graphicFile.mimetype) : null;
+
+  const personFolders = [];
   const personFolderName = uniqueNamer();
   for (const person of created.people) {
     const folder = personFolderName(person.name);
+    personFolders.push(folder);
     const linkFileName = uniqueNamer();
     for (const { label, code } of person.codes) {
       const url = `${publicBaseUrl}/r/${code}`;
@@ -244,24 +249,25 @@ uploadRoutes.post(
       archive.append(pngBuffer, { name: `${folder}/${linkFileName(label)}.png` });
     }
 
-    if (graphicFile) {
-      const letterBytes = await buildPersonLetter({
+    if (book) {
+      await addPersonLetter({
+        book,
         personName: person.name,
         codesForPerson: person.codes,
         boxes: created.resolvedBoxes,
-        graphicData: graphicFile.buffer,
-        graphicMime: graphicFile.mimetype,
         signatureName,
         signatureTitle,
         publicBaseUrl,
       });
-      archive.append(Buffer.from(letterBytes), { name: `${folder}/Letter.pdf` });
-      letterPdfs.push(letterBytes);
     }
   }
 
-  if (letterPdfs.length) {
-    const combinedBytes = await mergeLetterPdfs(letterPdfs);
+  if (book) {
+    for (let i = 0; i < created.people.length; i++) {
+      const letterBytes = await extractLetterPage(book, i);
+      archive.append(Buffer.from(letterBytes), { name: `${personFolders[i]}/Letter.pdf` });
+    }
+    const combinedBytes = await saveLetterBook(book);
     archive.append(Buffer.from(combinedBytes), { name: "All Letters.pdf" });
   }
 

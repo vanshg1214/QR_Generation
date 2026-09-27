@@ -23,8 +23,23 @@ function detectFromImage(imageUrl, onDone) {
 export default function LetterGraphicCalibrator({ graphicFile, links, boxes, onBoxesChange }) {
   const [imageUrl, setImageUrl] = useState(null);
   const [detecting, setDetecting] = useState(false);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const containerRef = useRef(null);
   const dragState = useRef(null);
+
+  // Tracks the calibrator's actual on-screen pixel size so the preview
+  // pattern can show the REAL inscribed square (see below) instead of a
+  // fixed-margin approximation that misleads on non-square boxes.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setContainerSize({ width, height });
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [imageUrl]);
 
   // Re-detect from scratch whenever the graphic itself changes -- boxes
   // calibrated against a previous image don't carry over.
@@ -133,7 +148,23 @@ export default function LetterGraphicCalibrator({ graphicFile, links, boxes, onB
 
       <div className="qr-calibrator-canvas" ref={containerRef}>
         {imageUrl && <img src={imageUrl} alt="Letter graphic" draggable={false} />}
-        {boxes.map((box) => (
+        {boxes.map((box) => {
+          // Mirrors the server's rule exactly: never stretch the QR to fill a
+          // non-square box -- inscribe the largest centered square instead.
+          const boxPxWidth = box.width * containerSize.width;
+          const boxPxHeight = box.height * containerSize.height;
+          const qrPx = Math.min(boxPxWidth, boxPxHeight);
+          const patternStyle =
+            containerSize.width > 0
+              ? {
+                  left: (boxPxWidth - qrPx) / 2,
+                  top: (boxPxHeight - qrPx) / 2,
+                  width: qrPx,
+                  height: qrPx,
+                }
+              : { inset: 0 }; // before we've measured the container yet
+
+          return (
           <div
             key={box.boxId}
             className="qr-box"
@@ -145,7 +176,7 @@ export default function LetterGraphicCalibrator({ graphicFile, links, boxes, onB
             }}
             {...dragHandlers(box.boxId, "move")}
           >
-            <div className="qr-box-pattern" />
+            <div className="qr-box-pattern" style={patternStyle} />
             <div className="qr-box-controls" onPointerDown={(e) => e.stopPropagation()}>
               <select
                 value={links.some((l) => l.uid === box.linkUid) ? box.linkUid : ""}
@@ -164,7 +195,8 @@ export default function LetterGraphicCalibrator({ graphicFile, links, boxes, onB
             </div>
             <div className="qr-box-handle" {...dragHandlers(box.boxId, "resize")} />
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

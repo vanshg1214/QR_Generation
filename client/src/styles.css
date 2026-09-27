@@ -632,7 +632,6 @@ tbody tr:hover {
 
 .qr-box-pattern {
   position: absolute;
-  inset: 6px;
   background-image: repeating-conic-gradient(var(--primary) 0% 25%, transparent 0% 50%);
   background-size: 8px 8px;
   opacity: 0.35;

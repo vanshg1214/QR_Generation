@@ -23,25 +23,28 @@ function fitTextSize(font, text, startSize, minSize, maxWidth) {
   return size;
 }
 
-// One-page "Dear {name} ji" letter: greeting at top, the campaign graphic
-// (with any per-person QR codes stamped into it) scaled to fit in the middle,
-// and a signature block (blank signing space + name + title) at the bottom.
-// qrStamps: [{ x, y, width, height, qrPngBytes }], all fractions (0..1, top-left
-// origin) of the ORIGINAL graphic image's dimensions.
-export async function buildLetterPdf(
-  name,
-  graphicBytes,
-  graphicMime,
-  { signatureName, signatureTitle, qrStamps = [] } = {}
-) {
+// A "book" is one shared PDFDocument with the campaign graphic and fonts
+// embedded ONCE. Decoding/embedding a multi-megabyte graphic is by far the
+// most expensive part of building these letters -- doing it once per
+// campaign instead of once per person is what keeps a large campaign fast
+// (a 28-person campaign with re-embedding per person took 44s; sharing one
+// embed brings that down to a couple of seconds).
+export async function createLetterBook(graphicBytes, graphicMime) {
   const pdfDoc = await PDFDocument.create();
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
-
   const image =
-    graphicMime === "image/png"
-      ? await pdfDoc.embedPng(graphicBytes)
-      : await pdfDoc.embedJpg(graphicBytes);
+    graphicMime === "image/png" ? await pdfDoc.embedPng(graphicBytes) : await pdfDoc.embedJpg(graphicBytes);
+  return { pdfDoc, boldFont, regularFont, image, pageIndices: [] };
+}
+
+// Adds one person's "Dear {name} ji" letter page to the shared book:
+// greeting at top, the (already-embedded, shared) graphic scaled to fit in
+// the middle with any per-person QR codes stamped into it, and a signature
+// block at the bottom. qrStamps: [{ x, y, width, height, qrPngBytes }], all
+// fractions (0..1, top-left origin) of the ORIGINAL graphic image's dimensions.
+export async function addLetterPage(book, name, { signatureName, signatureTitle, qrStamps = [] } = {}) {
+  const { pdfDoc, boldFont, regularFont, image } = book;
 
   const contentWidth = PAGE_WIDTH - MARGIN * 2;
   const topOfImageY = PAGE_HEIGHT - MARGIN - GREETING_SIZE - GAP_BELOW_GREETING;
@@ -56,6 +59,7 @@ export async function buildLetterPdf(
   }
 
   const page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  book.pageIndices.push(pdfDoc.getPageCount() - 1);
 
   const greeting = `Dear ${name} ji,`;
   const greetingSize = fitTextSize(boldFont, greeting, GREETING_SIZE, 10, contentWidth);
@@ -113,17 +117,24 @@ export async function buildLetterPdf(
       });
     }
   }
-
-  return pdfDoc.save();
 }
 
-// Merges ordered single-page PDF byte arrays into one combined PDF for print-all.
-export async function mergeLetterPdfs(pdfBytesList) {
-  const merged = await PDFDocument.create();
-  for (const bytes of pdfBytesList) {
-    const doc = await PDFDocument.load(bytes);
-    const copiedPages = await merged.copyPages(doc, doc.getPageIndices());
-    copiedPages.forEach((page) => merged.addPage(page));
-  }
-  return merged.save();
+// Extracts one person's page (by the order it was added in) as its own
+// standalone single-page PDF, for that person's individual Letter.pdf.
+// copyPages reuses the book's already-decoded image data rather than
+// re-embedding the raw graphic bytes again.
+export async function extractLetterPage(book, personIndex) {
+  const single = await PDFDocument.create();
+  const [copiedPage] = await single.copyPages(book.pdfDoc, [book.pageIndices[personIndex]]);
+  single.addPage(copiedPage);
+  // Object streams trade CPU time for a smaller file by re-compressing the
+  // PDF's structural objects -- not worth it here since the embedded image
+  // already dominates file size, and this runs once per person.
+  return single.save({ useObjectStreams: false });
+}
+
+// Saves the whole book -- every person's page, in order -- as one combined
+// PDF for print-all ("All Letters.pdf").
+export async function saveLetterBook(book) {
+  return book.pdfDoc.save({ useObjectStreams: false });
 }
