@@ -246,7 +246,7 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
   }
 
   const { rows: campaignRows } = await pool.query(
-    "SELECT name, graphic_data, graphic_mime, signature_name, signature_title FROM campaigns WHERE id = $1",
+    "SELECT name, graphic_data, graphic_mime, signature_name, signature_title, typography, include_greeting FROM campaigns WHERE id = $1",
     [campaignId]
   );
   if (!campaignRows[0]) {
@@ -257,6 +257,8 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
   const graphicMime = campaignRows[0].graphic_mime;
   const signatureName = campaignRows[0].signature_name;
   const signatureTitle = campaignRows[0].signature_title;
+  const typography = campaignRows[0].typography || "sans-serif";
+  const includeGreeting = campaignRows[0].include_greeting ?? true;
 
   const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
 
@@ -308,7 +310,7 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
   // The campaign graphic is embedded ONCE into a shared "book" and reused for
   // every person's page -- re-embedding a multi-megabyte image per person is
   // what made this slow.
-  const book = graphicData ? await createLetterBook(graphicData, graphicMime) : null;
+  const book = graphicData ? await createLetterBook(graphicData, graphicMime, typography) : null;
 
   const personFolders = [];
   const personFolderName = uniqueNamer();
@@ -330,6 +332,7 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
         boxes,
         signatureName,
         signatureTitle,
+        includeGreeting,
         publicBaseUrl,
       });
     }

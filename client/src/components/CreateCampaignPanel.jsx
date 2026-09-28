@@ -20,6 +20,8 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
   const [boxes, setBoxes] = useState([]);
   const [signatureName, setSignatureName] = useState(DEFAULT_SIGNATURE_NAME);
   const [signatureTitle, setSignatureTitle] = useState(DEFAULT_SIGNATURE_TITLE);
+  const [typography, setTypography] = useState("sans-serif");
+  const [includeGreeting, setIncludeGreeting] = useState(true);
   const [busy, setBusy] = useState(false);
 
   function updateLink(index, field, value) {
@@ -62,6 +64,8 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
         boxes: resolvedBoxes,
         signatureName: signatureName.trim(),
         signatureTitle: signatureTitle.trim(),
+        typography,
+        includeGreeting,
       });
       downloadBlob(blob, `${campaignName.trim().replace(/[^a-z0-9]+/gi, "_")}-qr-codes.zip`);
       toast.success("Done — QR codes downloaded as a zip.", { id: toastId });
@@ -71,6 +75,8 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
       setBoxes([]);
       setSignatureName(DEFAULT_SIGNATURE_NAME);
       setSignatureTitle(DEFAULT_SIGNATURE_TITLE);
+      setTypography("sans-serif");
+      setIncludeGreeting(true);
       fileInput.current.value = "";
       graphicInput.current.value = "";
       onCreated?.();
@@ -186,6 +192,23 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
                 onChange={(e) => setSignatureTitle(e.target.value)}
                 placeholder="Export Marketing Strategist"
               />
+            </label>
+            <label className="field-label">
+              Letter Font Style
+              <select value={typography} onChange={(e) => setTypography(e.target.value)}>
+                <option value="sans-serif">Modern & Clean (Helvetica)</option>
+                <option value="serif">Classic & Professional (Times Roman)</option>
+                <option value="monospace">Typewriter Style (Courier)</option>
+              </select>
+            </label>
+            <label className="field-label" style={{ flexDirection: "row", alignItems: "center", gap: "8px", fontWeight: "normal", marginTop: "8px" }}>
+              <input 
+                type="checkbox" 
+                checked={includeGreeting}
+                onChange={(e) => setIncludeGreeting(e.target.checked)}
+                style={{ width: "auto", margin: 0 }}
+              />
+              Include Personalized Greeting (Dear [Name] ji,)
             </label>
           </>
         )}

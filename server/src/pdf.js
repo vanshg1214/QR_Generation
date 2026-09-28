@@ -29,10 +29,23 @@ function fitTextSize(font, text, startSize, minSize, maxWidth) {
 // campaign instead of once per person is what keeps a large campaign fast
 // (a 28-person campaign with re-embedding per person took 44s; sharing one
 // embed brings that down to a couple of seconds).
-export async function createLetterBook(graphicBytes, graphicMime) {
+export async function createLetterBook(graphicBytes, graphicMime, typography = "sans-serif") {
   const pdfDoc = await PDFDocument.create();
-  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  
+  let boldFontStandard = StandardFonts.HelveticaBold;
+  let regularFontStandard = StandardFonts.Helvetica;
+  
+  if (typography === "serif") {
+    boldFontStandard = StandardFonts.TimesRomanBold;
+    regularFontStandard = StandardFonts.TimesRoman;
+  } else if (typography === "monospace") {
+    boldFontStandard = StandardFonts.CourierBold;
+    regularFontStandard = StandardFonts.Courier;
+  }
+  
+  const boldFont = await pdfDoc.embedFont(boldFontStandard);
+  const regularFont = await pdfDoc.embedFont(regularFontStandard);
+  
   const image =
     graphicMime === "image/png" ? await pdfDoc.embedPng(graphicBytes) : await pdfDoc.embedJpg(graphicBytes);
   return { pdfDoc, boldFont, regularFont, image, pageIndices: [] };
@@ -43,7 +56,7 @@ export async function createLetterBook(graphicBytes, graphicMime) {
 // the middle with any per-person QR codes stamped into it, and a signature
 // block at the bottom. qrStamps: [{ x, y, width, height, qrPngBytes }], all
 // fractions (0..1, top-left origin) of the ORIGINAL graphic image's dimensions.
-export async function addLetterPage(book, name, { signatureName, signatureTitle, qrStamps = [] } = {}) {
+export async function addLetterPage(book, name, { signatureName, signatureTitle, qrStamps = [], includeGreeting = true } = {}) {
   const { pdfDoc, boldFont, regularFont, image } = book;
 
   const contentWidth = PAGE_WIDTH - MARGIN * 2;
@@ -61,17 +74,23 @@ export async function addLetterPage(book, name, { signatureName, signatureTitle,
   const page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
   book.pageIndices.push(pdfDoc.getPageCount() - 1);
 
-  const greeting = `Dear ${name} ji,`;
-  const greetingSize = fitTextSize(boldFont, greeting, GREETING_SIZE, 10, contentWidth);
-  page.drawText(greeting, {
-    x: MARGIN,
-    y: PAGE_HEIGHT - MARGIN - GREETING_SIZE,
-    size: greetingSize,
-    font: boldFont,
-    color: rgb(0.1, 0.1, 0.1),
-  });
+  if (includeGreeting) {
+    const greeting = `Dear ${name} ji,`;
+    const greetingSize = fitTextSize(boldFont, greeting, GREETING_SIZE, 10, contentWidth);
+    page.drawText(greeting, {
+      x: MARGIN,
+      y: PAGE_HEIGHT - MARGIN - GREETING_SIZE,
+      size: greetingSize,
+      font: boldFont,
+      color: rgb(0.1, 0.1, 0.1),
+    });
+  }
 
-  const imgX = MARGIN + (contentWidth - imgWidth) / 2;
+  // Left-align with the greeting/signature text (both pinned at x=MARGIN) --
+  // not centered -- so the graphic and the text share one vertical edge and
+  // read as one piece, instead of the graphic drifting right whenever it's
+  // narrower than the text column (e.g. a tall portrait image).
+  const imgX = MARGIN;
   const imgY = topOfImageY - imgHeight;
   page.drawImage(image, { x: imgX, y: imgY, width: imgWidth, height: imgHeight });
 

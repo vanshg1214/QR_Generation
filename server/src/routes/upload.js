@@ -115,6 +115,9 @@ uploadRoutes.post(
     return res.status(400).json({ error: "Signature name/title must be 200 characters or fewer" });
   }
 
+  const typography = ["sans-serif", "serif", "monospace"].includes(req.body.typography) ? req.body.typography : "sans-serif";
+  const includeGreeting = req.body.includeGreeting === "false" ? false : true;
+
   let boxes;
   try {
     boxes = JSON.parse(req.body.boxes || "[]");
@@ -160,8 +163,8 @@ uploadRoutes.post(
 
   const created = await withTransaction(async (client) => {
     const { rows: campaignRows } = await client.query(
-      "INSERT INTO campaigns (name, signature_name, signature_title) VALUES ($1, $2, $3) RETURNING id",
-      [campaignName.trim(), signatureName, signatureTitle]
+      "INSERT INTO campaigns (name, signature_name, signature_title, typography, include_greeting) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+      [campaignName.trim(), signatureName, signatureTitle, typography, includeGreeting]
     );
     const campaignId = campaignRows[0].id;
 
@@ -235,7 +238,7 @@ uploadRoutes.post(
   // The campaign graphic is embedded ONCE into a shared "book" and reused for
   // every person's page -- re-embedding a multi-megabyte image per person is
   // what made this slow (a 28-person campaign took 44s before this).
-  const book = graphicFile ? await createLetterBook(graphicFile.buffer, graphicFile.mimetype) : null;
+  const book = graphicFile ? await createLetterBook(graphicFile.buffer, graphicFile.mimetype, typography) : null;
 
   const personFolders = [];
   const personFolderName = uniqueNamer();
@@ -257,6 +260,7 @@ uploadRoutes.post(
         boxes: created.resolvedBoxes,
         signatureName,
         signatureTitle,
+        includeGreeting,
         publicBaseUrl,
       });
     }
