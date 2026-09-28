@@ -17,6 +17,7 @@ export async function addPersonLetter({
   signatureName,
   signatureTitle,
   includeGreeting,
+  greetingPos,
   publicBaseUrl,
 }) {
   const codeByLinkId = new Map(codesForPerson.map((c) => [c.campaignLinkId, c.code]));
@@ -24,10 +25,10 @@ export async function addPersonLetter({
   const qrStamps = [];
   for (const box of boxes) {
     const code = codeByLinkId.get(box.campaignLinkId);
-    if (!code) continue; // box's link doesn't exist for this person -- skip rather than fail the letter
+    if (!code) continue;
     const qrPngBytes = await QRCode.toBuffer(`${publicBaseUrl}/r/${code}`, { width: 512, margin: 1 });
     qrStamps.push({ x: box.x, y: box.y, width: box.width, height: box.height, qrPngBytes });
   }
 
-  await addLetterPage(book, personName, { signatureName, signatureTitle, qrStamps, includeGreeting });
+  await addLetterPage(book, personName, { signatureName, signatureTitle, qrStamps, includeGreeting, greetingPos });
 }

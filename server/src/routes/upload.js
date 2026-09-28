@@ -118,6 +118,11 @@ uploadRoutes.post(
   const typography = ["sans-serif", "serif", "monospace"].includes(req.body.typography) ? req.body.typography : "sans-serif";
   const includeGreeting = req.body.includeGreeting === "false" ? false : true;
 
+  let greetingPos = null;
+  try {
+    if (req.body.greetingPos) greetingPos = JSON.parse(req.body.greetingPos);
+  } catch { /* ignore */ }
+
   let boxes;
   try {
     boxes = JSON.parse(req.body.boxes || "[]");
@@ -163,8 +168,8 @@ uploadRoutes.post(
 
   const created = await withTransaction(async (client) => {
     const { rows: campaignRows } = await client.query(
-      "INSERT INTO campaigns (name, signature_name, signature_title, typography, include_greeting) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-      [campaignName.trim(), signatureName, signatureTitle, typography, includeGreeting]
+      "INSERT INTO campaigns (name, signature_name, signature_title, typography, include_greeting, greeting_pos_json) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+      [campaignName.trim(), signatureName, signatureTitle, typography, includeGreeting, greetingPos ? JSON.stringify(greetingPos) : null]
     );
     const campaignId = campaignRows[0].id;
 
@@ -261,6 +266,7 @@ uploadRoutes.post(
         signatureName,
         signatureTitle,
         includeGreeting,
+        greetingPos,
         publicBaseUrl,
       });
     }

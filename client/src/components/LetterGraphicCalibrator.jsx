@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { detectBlankBoxes } from "../lib/detectBlankBoxes.js";
 
 const MIN_BOX_SIZE = 0.02;
+const DEFAULT_GREETING_X = 0.03; // fraction of graphic width
+const DEFAULT_GREETING_Y = 0.03; // fraction of graphic height
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -20,16 +22,22 @@ function detectFromImage(imageUrl, onDone) {
 // Lets the user calibrate where each person's QR code should be stamped onto
 // the letter graphic: auto-detects candidate blank boxes, then lets them
 // drag/resize/delete/add boxes and assign each one to a campaign link.
-export default function LetterGraphicCalibrator({ graphicFile, links, boxes, onBoxesChange }) {
+// Also lets them drag the "Dear [Name] ji," greeting to any position on the graphic.
+export default function LetterGraphicCalibrator({
+  graphicFile,
+  links,
+  boxes,
+  onBoxesChange,
+  includeGreeting,
+  greetingPos,        // { x, y } fractions of graphic, or null = above graphic
+  onGreetingPosChange,
+}) {
   const [imageUrl, setImageUrl] = useState(null);
   const [detecting, setDetecting] = useState(false);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const containerRef = useRef(null);
   const dragState = useRef(null);
 
-  // Tracks the calibrator's actual on-screen pixel size so the preview
-  // pattern can show the REAL inscribed square (see below) instead of a
-  // fixed-margin approximation that misleads on non-square boxes.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -41,8 +49,6 @@ export default function LetterGraphicCalibrator({ graphicFile, links, boxes, onB
     return () => observer.disconnect();
   }, [imageUrl]);
 
-  // Re-detect from scratch whenever the graphic itself changes -- boxes
-  // calibrated against a previous image don't carry over.
   useEffect(() => {
     if (!graphicFile) {
       setImageUrl(null);
@@ -57,8 +63,6 @@ export default function LetterGraphicCalibrator({ graphicFile, links, boxes, onB
       setDetecting(false);
     });
     return () => URL.revokeObjectURL(url);
-    // Only re-run when the graphic file itself changes -- onBoxesChange is a
-    // stable setState setter from the parent.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graphicFile]);
 
@@ -94,11 +98,11 @@ export default function LetterGraphicCalibrator({ graphicFile, links, boxes, onB
         e.stopPropagation();
         e.currentTarget.setPointerCapture(e.pointerId);
         const box = boxes.find((b) => b.boxId === boxId);
-        dragState.current = { boxId, mode, startClientX: e.clientX, startClientY: e.clientY, startBox: { ...box } };
+        dragState.current = { type: "box", boxId, mode, startClientX: e.clientX, startClientY: e.clientY, startBox: { ...box } };
       },
       onPointerMove: (e) => {
         const state = dragState.current;
-        if (!state || state.boxId !== boxId || state.mode !== mode || !containerRef.current) return;
+        if (!state || state.type !== "box" || state.boxId !== boxId || state.mode !== mode || !containerRef.current) return;
         const rect = containerRef.current.getBoundingClientRect();
         const dxFrac = (e.clientX - state.startClientX) / rect.width;
         const dyFrac = (e.clientY - state.startClientY) / rect.height;
@@ -121,7 +125,37 @@ export default function LetterGraphicCalibrator({ graphicFile, links, boxes, onB
     };
   }
 
+  function greetingDragHandlers() {
+    return {
+      onPointerDown: (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        const cur = greetingPos || { x: DEFAULT_GREETING_X, y: DEFAULT_GREETING_Y };
+        dragState.current = { type: "greeting", startClientX: e.clientX, startClientY: e.clientY, startPos: { ...cur } };
+      },
+      onPointerMove: (e) => {
+        const state = dragState.current;
+        if (!state || state.type !== "greeting" || !containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const dxFrac = (e.clientX - state.startClientX) / rect.width;
+        const dyFrac = (e.clientY - state.startClientY) / rect.height;
+        onGreetingPosChange({
+          x: clamp(state.startPos.x + dxFrac, 0, 0.95),
+          y: clamp(state.startPos.y + dyFrac, 0, 0.95),
+        });
+      },
+      onPointerUp: (e) => {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+        dragState.current = null;
+      },
+    };
+  }
+
   if (!graphicFile) return null;
+
+  const gPos = greetingPos || { x: DEFAULT_GREETING_X, y: DEFAULT_GREETING_Y };
+  const greetingOnGraphic = includeGreeting && greetingPos !== null;
 
   return (
     <div className="qr-calibrator">
@@ -146,11 +180,46 @@ export default function LetterGraphicCalibrator({ graphicFile, links, boxes, onB
         </div>
       </div>
 
+      {includeGreeting && (
+        <div style={{ marginBottom: "10px", display: "flex", alignItems: "center", gap: "12px", fontSize: "0.85rem" }}>
+          <span className="muted">Greeting position:</span>
+          <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontWeight: "normal" }}>
+            <input
+              type="radio"
+              name="greetingPos"
+              checked={greetingPos === null}
+              onChange={() => onGreetingPosChange(null)}
+            />
+            Above graphic (default)
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontWeight: "normal" }}>
+            <input
+              type="radio"
+              name="greetingPos"
+              checked={greetingPos !== null}
+              onChange={() => onGreetingPosChange({ x: DEFAULT_GREETING_X, y: DEFAULT_GREETING_Y })}
+            />
+            Inside graphic (draggable)
+          </label>
+        </div>
+      )}
+
       <div className="qr-calibrator-canvas" ref={containerRef}>
         {imageUrl && <img src={imageUrl} alt="Letter graphic" draggable={false} />}
+
+        {/* Draggable greeting overlay — only when placed inside the graphic */}
+        {greetingOnGraphic && (
+          <div
+            className="greeting-overlay"
+            style={{ left: `${gPos.x * 100}%`, top: `${gPos.y * 100}%` }}
+            {...greetingDragHandlers()}
+            title="Drag to reposition the greeting"
+          >
+            Dear [Name] ji,
+          </div>
+        )}
+
         {boxes.map((box) => {
-          // Mirrors the server's rule exactly: never stretch the QR to fill a
-          // non-square box -- inscribe the largest centered square instead.
           const boxPxWidth = box.width * containerSize.width;
           const boxPxHeight = box.height * containerSize.height;
           const qrPx = Math.min(boxPxWidth, boxPxHeight);
@@ -162,7 +231,7 @@ export default function LetterGraphicCalibrator({ graphicFile, links, boxes, onB
                   width: qrPx,
                   height: qrPx,
                 }
-              : { inset: 0 }; // before we've measured the container yet
+              : { inset: 0 };
 
           return (
           <div

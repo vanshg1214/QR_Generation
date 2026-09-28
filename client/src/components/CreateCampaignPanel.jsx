@@ -22,6 +22,7 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
   const [signatureTitle, setSignatureTitle] = useState(DEFAULT_SIGNATURE_TITLE);
   const [typography, setTypography] = useState("sans-serif");
   const [includeGreeting, setIncludeGreeting] = useState(true);
+  const [greetingPos, setGreetingPos] = useState(null); // null = above graphic; {x,y} = inside graphic
   const [busy, setBusy] = useState(false);
 
   function updateLink(index, field, value) {
@@ -66,6 +67,7 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
         signatureTitle: signatureTitle.trim(),
         typography,
         includeGreeting,
+        greetingPos: includeGreeting ? greetingPos : null,
       });
       downloadBlob(blob, `${campaignName.trim().replace(/[^a-z0-9]+/gi, "_")}-qr-codes.zip`);
       toast.success("Done — QR codes downloaded as a zip.", { id: toastId });
@@ -77,6 +79,7 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
       setSignatureTitle(DEFAULT_SIGNATURE_TITLE);
       setTypography("sans-serif");
       setIncludeGreeting(true);
+      setGreetingPos(null);
       fileInput.current.value = "";
       graphicInput.current.value = "";
       onCreated?.();
@@ -174,6 +177,9 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
               links={links}
               boxes={boxes}
               onBoxesChange={setBoxes}
+              includeGreeting={includeGreeting}
+              greetingPos={greetingPos}
+              onGreetingPosChange={setGreetingPos}
             />
             <label className="field-label">
               Signature name

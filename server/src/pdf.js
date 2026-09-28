@@ -1,10 +1,12 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
+function clamp(val, lo, hi) { return Math.min(Math.max(val, lo), hi); }
+
 const PAGE_WIDTH = 595.28; // A4 portrait, in points
 const PAGE_HEIGHT = 841.89;
 const MARGIN = 50;
-const GREETING_SIZE = 20;
-const GAP_BELOW_GREETING = 26;
+const GREETING_SIZE = 13;   // smaller so it blends with the graphic styling
+const GAP_BELOW_GREETING = 16;
 
 const SIGNATURE_NAME_SIZE = 13;
 const SIGNATURE_TITLE_SIZE = 11;
@@ -56,7 +58,9 @@ export async function createLetterBook(graphicBytes, graphicMime, typography = "
 // the middle with any per-person QR codes stamped into it, and a signature
 // block at the bottom. qrStamps: [{ x, y, width, height, qrPngBytes }], all
 // fractions (0..1, top-left origin) of the ORIGINAL graphic image's dimensions.
-export async function addLetterPage(book, name, { signatureName, signatureTitle, qrStamps = [], includeGreeting = true } = {}) {
+// greetingPos: null = above the graphic (old behaviour); { x, y } = fraction of
+// the graphic's bounding box where the text's top-left should land.
+export async function addLetterPage(book, name, { signatureName, signatureTitle, qrStamps = [], includeGreeting = true, greetingPos = null } = {}) {
   const { pdfDoc, boldFont, regularFont, image } = book;
 
   const contentWidth = PAGE_WIDTH - MARGIN * 2;
@@ -76,14 +80,30 @@ export async function addLetterPage(book, name, { signatureName, signatureTitle,
 
   if (includeGreeting) {
     const greeting = `Dear ${name} ji,`;
-    const greetingSize = fitTextSize(boldFont, greeting, GREETING_SIZE, 10, contentWidth);
-    page.drawText(greeting, {
-      x: MARGIN,
-      y: PAGE_HEIGHT - MARGIN - GREETING_SIZE,
-      size: greetingSize,
-      font: boldFont,
-      color: rgb(0.1, 0.1, 0.1),
-    });
+    const greetingSize = fitTextSize(boldFont, greeting, GREETING_SIZE, 8, contentWidth);
+    if (greetingPos) {
+      // Inside the graphic: greetingPos.x/y are fractions of the graphic's
+      // bounding box (top-left origin, same as QR stamps).
+      const gx = imgX + greetingPos.x * imgWidth;
+      // PDF y is bottom-up; greetingPos.y is top-down fraction of graphic height.
+      const gy = imgY + (1 - greetingPos.y) * imgHeight - greetingSize;
+      page.drawText(greeting, {
+        x: clamp(gx, MARGIN, PAGE_WIDTH - MARGIN - boldFont.widthOfTextAtSize(greeting, greetingSize)),
+        y: clamp(gy, MARGIN, PAGE_HEIGHT - MARGIN - greetingSize),
+        size: greetingSize,
+        font: boldFont,
+        color: rgb(0.1, 0.1, 0.1),
+      });
+    } else {
+      // Above the graphic (default)
+      page.drawText(greeting, {
+        x: MARGIN,
+        y: PAGE_HEIGHT - MARGIN - GREETING_SIZE,
+        size: greetingSize,
+        font: boldFont,
+        color: rgb(0.1, 0.1, 0.1),
+      });
+    }
   }
 
   // Left-align with the greeting/signature text (both pinned at x=MARGIN) --

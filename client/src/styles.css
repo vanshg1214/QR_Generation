@@ -677,6 +677,26 @@ tbody tr:hover {
   cursor: nwse-resize;
 }
 
+/* Draggable greeting overlay in the calibrator */
+.greeting-overlay {
+  position: absolute;
+  cursor: move;
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1.5px dashed var(--primary);
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: sans-serif;
+  color: var(--primary);
+  white-space: nowrap;
+  user-select: none;
+  touch-action: none;
+  line-height: 1.4;
+  backdrop-filter: blur(2px);
+  z-index: 10;
+}
+
 .link-detail-row {
   display: flex;
   gap: 8px;
