@@ -22,6 +22,7 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
   const [signatureTitle, setSignatureTitle] = useState(DEFAULT_SIGNATURE_TITLE);
   const [typography, setTypography] = useState("sans-serif");
   const [includeGreeting, setIncludeGreeting] = useState(true);
+  const [includeSignature, setIncludeSignature] = useState(true);
   const [greetingPos, setGreetingPos] = useState(null); // null = above graphic; {x,y} = inside graphic
   const [busy, setBusy] = useState(false);
 
@@ -63,8 +64,9 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
         file,
         graphic,
         boxes: resolvedBoxes,
-        signatureName: signatureName.trim(),
-        signatureTitle: signatureTitle.trim(),
+        // No signature = no footer; the server only draws one when a name/title is given.
+        signatureName: includeSignature ? signatureName.trim() : "",
+        signatureTitle: includeSignature ? signatureTitle.trim() : "",
         typography,
         includeGreeting,
         greetingPos: includeGreeting ? greetingPos : null,
@@ -79,6 +81,7 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
       setSignatureTitle(DEFAULT_SIGNATURE_TITLE);
       setTypography("sans-serif");
       setIncludeGreeting(true);
+      setIncludeSignature(true);
       setGreetingPos(null);
       fileInput.current.value = "";
       graphicInput.current.value = "";
@@ -106,11 +109,12 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
       <p className="muted">
         Give this batch a title, add one or more links (each gets its own QR code per person —
         e.g. "Demo", "Testimonial", "Product Page"), then upload the Excel (.xlsx) file of people
-        (needs a "Name" column). Optionally upload a letter graphic (PNG/JPEG) — if provided,
-        every person's folder in the zip also gets a "Dear {"{Name}"} ji" PDF letter with that
-        graphic and a signature block, plus one combined "All Letters.pdf" for printing everyone
-        at once. If the graphic has a blank placeholder box (e.g. "scan this"), calibrate it below
-        so each person's real QR code gets stamped into it.
+        (the name column is found automatically, e.g. "Name" or "Contact Name"). Optionally upload
+        a letter graphic (PNG/JPEG) — if provided, the zip also gets one combined "All Letters.pdf"
+        for printing, one page per person with their own QR code. The greeting and signature
+        footer are optional; with neither, each page is just the graphic, edge to edge. If the
+        graphic has a blank placeholder box (e.g. "scan this"), calibrate it below so each
+        person's real QR code gets stamped into it.
       </p>
       <form className="stacked-form" onSubmit={handleSubmit}>
         <input
@@ -181,24 +185,37 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
               greetingPos={greetingPos}
               onGreetingPosChange={setGreetingPos}
             />
-            <label className="field-label">
-              Signature name
-              <input
-                type="text"
-                value={signatureName}
-                onChange={(e) => setSignatureName(e.target.value)}
-                placeholder="Nitin Gupta"
+            <label className="field-label" style={{ flexDirection: "row", alignItems: "center", gap: "8px", fontWeight: "normal", marginTop: "8px" }}>
+              <input 
+                type="checkbox" 
+                checked={includeSignature}
+                onChange={(e) => setIncludeSignature(e.target.checked)}
+                style={{ width: "auto", margin: 0 }}
               />
+              Include Signature Footer (name & title)
             </label>
-            <label className="field-label">
-              Signature title
-              <input
-                type="text"
-                value={signatureTitle}
-                onChange={(e) => setSignatureTitle(e.target.value)}
-                placeholder="Export Marketing Strategist"
-              />
-            </label>
+            {includeSignature && (
+              <>
+                <label className="field-label">
+                  Signature name
+                  <input
+                    type="text"
+                    value={signatureName}
+                    onChange={(e) => setSignatureName(e.target.value)}
+                    placeholder="Nitin Gupta"
+                  />
+                </label>
+                <label className="field-label">
+                  Signature title
+                  <input
+                    type="text"
+                    value={signatureTitle}
+                    onChange={(e) => setSignatureTitle(e.target.value)}
+                    placeholder="Export Marketing Strategist"
+                  />
+                </label>
+              </>
+            )}
             <label className="field-label">
               Letter Font Style
               <select value={typography} onChange={(e) => setTypography(e.target.value)}>

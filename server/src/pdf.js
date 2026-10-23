@@ -53,37 +53,59 @@ export async function createLetterBook(graphicBytes, graphicMime, typography = "
   return { pdfDoc, boldFont, regularFont, image, pageIndices: [] };
 }
 
-// Adds one person's "Dear {name} ji" letter page to the shared book:
-// greeting at top, the (already-embedded, shared) graphic scaled to fit in
-// the middle with any per-person QR codes stamped into it, and a signature
-// block at the bottom. qrStamps: [{ x, y, width, height, qrPngBytes }], all
-// fractions (0..1, top-left origin) of the ORIGINAL graphic image's dimensions.
-// greetingPos: null = above the graphic (old behaviour); { x, y } = fraction of
-// the graphic's bounding box where the text's top-left should land.
+// Adds one person's letter page to the shared book: the (already-embedded,
+// shared) graphic with any per-person QR codes stamped into it, plus an
+// optional greeting and signature block. qrStamps: [{ x, y, width, height,
+// qrPngBytes }], all fractions (0..1, top-left origin) of the ORIGINAL graphic
+// image's dimensions. greetingPos: null = above the graphic; { x, y } =
+// fraction of the graphic's bounding box where the text's top-left should land.
+//
+// When nothing needs to sit outside the graphic (no greeting above it, no
+// signature), the page IS the graphic: A4 width, height from the graphic's
+// aspect ratio, no margins -- so an A4-proportioned graphic prints as exactly
+// one full A4 page with no surrounding whitespace.
 export async function addLetterPage(book, name, { signatureName, signatureTitle, qrStamps = [], includeGreeting = true, greetingPos = null } = {}) {
   const { pdfDoc, boldFont, regularFont, image } = book;
 
-  const contentWidth = PAGE_WIDTH - MARGIN * 2;
-  const topOfImageY = PAGE_HEIGHT - MARGIN - GREETING_SIZE - GAP_BELOW_GREETING;
-  const bottomOfImageY = signatureName || signatureTitle ? MARGIN + SIGNATURE_BLOCK_HEIGHT : MARGIN;
-  const availableHeight = topOfImageY - bottomOfImageY;
+  const greetingAbove = includeGreeting && !greetingPos;
+  const hasSignature = Boolean(signatureName || signatureTitle);
+  const graphicOnly = !greetingAbove && !hasSignature;
 
-  let imgWidth = contentWidth;
-  let imgHeight = (image.height / image.width) * imgWidth;
-  if (imgHeight > availableHeight) {
-    imgHeight = availableHeight;
-    imgWidth = (image.width / image.height) * imgHeight;
+  let pageWidth, pageHeight, imgX, imgY, imgWidth, imgHeight;
+  if (graphicOnly) {
+    pageWidth = PAGE_WIDTH;
+    pageHeight = (image.height / image.width) * PAGE_WIDTH;
+    imgX = 0;
+    imgY = 0;
+    imgWidth = pageWidth;
+    imgHeight = pageHeight;
+  } else {
+    pageWidth = PAGE_WIDTH;
+    pageHeight = PAGE_HEIGHT;
+    // Only reserve room for what's actually printed outside the graphic.
+    const topOfImageY = PAGE_HEIGHT - MARGIN - (greetingAbove ? GREETING_SIZE + GAP_BELOW_GREETING : 0);
+    const bottomOfImageY = hasSignature ? MARGIN + SIGNATURE_BLOCK_HEIGHT : MARGIN;
+    const availableHeight = topOfImageY - bottomOfImageY;
+
+    imgWidth = PAGE_WIDTH - MARGIN * 2;
+    imgHeight = (image.height / image.width) * imgWidth;
+    if (imgHeight > availableHeight) {
+      imgHeight = availableHeight;
+      imgWidth = (image.width / image.height) * imgHeight;
+    }
+    // Left-align with the greeting/signature text (both pinned at x=MARGIN) --
+    // not centered -- so the graphic and the text share one vertical edge and
+    // read as one piece, instead of the graphic drifting right whenever it's
+    // narrower than the text column (e.g. a tall portrait image).
+    imgX = MARGIN;
+    imgY = topOfImageY - imgHeight;
   }
+  const contentWidth = pageWidth - MARGIN * 2;
+  // Keeps text inside the page; a borderless page only needs a small inset.
+  const edge = graphicOnly ? 8 : MARGIN;
 
-  const page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  const page = pdfDoc.addPage([pageWidth, pageHeight]);
   book.pageIndices.push(pdfDoc.getPageCount() - 1);
-
-  // Left-align with the greeting/signature text (both pinned at x=MARGIN) --
-  // not centered -- so the graphic and the text share one vertical edge and
-  // read as one piece, instead of the graphic drifting right whenever it's
-  // narrower than the text column (e.g. a tall portrait image).
-  const imgX = MARGIN;
-  const imgY = topOfImageY - imgHeight;
 
   // Graphic first, so a greeting positioned inside it is drawn on top, not under it.
   page.drawImage(image, { x: imgX, y: imgY, width: imgWidth, height: imgHeight });
@@ -98,8 +120,8 @@ export async function addLetterPage(book, name, { signatureName, signatureTitle,
       // PDF y is bottom-up; greetingPos.y is top-down fraction of graphic height.
       const gy = imgY + (1 - greetingPos.y) * imgHeight - greetingSize;
       page.drawText(greeting, {
-        x: clamp(gx, MARGIN, PAGE_WIDTH - MARGIN - boldFont.widthOfTextAtSize(greeting, greetingSize)),
-        y: clamp(gy, MARGIN, PAGE_HEIGHT - MARGIN - greetingSize),
+        x: clamp(gx, edge, pageWidth - edge - boldFont.widthOfTextAtSize(greeting, greetingSize)),
+        y: clamp(gy, edge, pageHeight - edge - greetingSize),
         size: greetingSize,
         font: boldFont,
         color: rgb(0.1, 0.1, 0.1),
