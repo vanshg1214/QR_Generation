@@ -247,7 +247,7 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
   }
 
   const { rows: campaignRows } = await pool.query(
-    "SELECT name, graphic_data, graphic_mime, signature_name, signature_title, typography, include_greeting, greeting_pos_json FROM campaigns WHERE id = $1",
+    "SELECT name, graphic_data, graphic_mime, signature_name, signature_title, typography, include_greeting, greeting_pos_json, letter_padding FROM campaigns WHERE id = $1",
     [campaignId]
   );
   if (!campaignRows[0]) {
@@ -260,6 +260,7 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
   const signatureTitle = campaignRows[0].signature_title;
   const typography = campaignRows[0].typography || "sans-serif";
   const includeGreeting = campaignRows[0].include_greeting ?? true;
+  const padding = campaignRows[0].letter_padding ?? false;
   let greetingPos = null;
   try { if (campaignRows[0].greeting_pos_json) greetingPos = JSON.parse(campaignRows[0].greeting_pos_json); } catch { /* ignore */ }
 
@@ -337,6 +338,7 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
           signatureTitle,
           includeGreeting,
           greetingPos,
+          padding,
           publicBaseUrl,
         });
       }

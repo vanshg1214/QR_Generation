@@ -5,6 +5,7 @@ function clamp(val, lo, hi) { return Math.min(Math.max(val, lo), hi); }
 const PAGE_WIDTH = 595.28; // A4 portrait, in points
 const PAGE_HEIGHT = 841.89;
 const MARGIN = 50;
+const BORDERLESS_TEXT_INSET = 28; // text distance from the edge on a borderless page
 const GREETING_SIZE = 13;   // smaller so it blends with the graphic styling
 const GAP_BELOW_GREETING = 16;
 
@@ -60,31 +61,27 @@ export async function createLetterBook(graphicBytes, graphicMime, typography = "
 // image's dimensions. greetingPos: null = above the graphic; { x, y } =
 // fraction of the graphic's bounding box where the text's top-left should land.
 //
-// When nothing needs to sit outside the graphic (no greeting above it, no
-// signature), the page IS the graphic: A4 width, height from the graphic's
-// aspect ratio, no margins -- so an A4-proportioned graphic prints as exactly
-// one full A4 page with no surrounding whitespace.
-export async function addLetterPage(book, name, { signatureName, signatureTitle, qrStamps = [], includeGreeting = true, greetingPos = null } = {}) {
+// padding: false (default) = borderless -- the graphic spans the full A4 width
+// with no margins, and the page is only made taller by a slim white band where a
+// greeting-above or signature actually needs room. With neither, the page IS the
+// graphic, so an A4-proportioned graphic prints as exactly one full A4 page.
+// padding: true = the graphic sits inside an A4 page with white margins.
+export async function addLetterPage(book, name, { signatureName, signatureTitle, qrStamps = [], includeGreeting = true, greetingPos = null, padding = false } = {}) {
   const { pdfDoc, boldFont, regularFont, image } = book;
 
   const greetingAbove = includeGreeting && !greetingPos;
   const hasSignature = Boolean(signatureName || signatureTitle);
-  const graphicOnly = !greetingAbove && !hasSignature;
+  // How far text sits from the page edge.
+  const inset = padding ? MARGIN : BORDERLESS_TEXT_INSET;
+  const topBand = greetingAbove ? inset + GREETING_SIZE + GAP_BELOW_GREETING : 0;
+  const bottomBand = hasSignature ? inset + SIGNATURE_BLOCK_HEIGHT : 0;
 
-  let pageWidth, pageHeight, imgX, imgY, imgWidth, imgHeight;
-  if (graphicOnly) {
-    pageWidth = PAGE_WIDTH;
-    pageHeight = (image.height / image.width) * PAGE_WIDTH;
-    imgX = 0;
-    imgY = 0;
-    imgWidth = pageWidth;
-    imgHeight = pageHeight;
-  } else {
-    pageWidth = PAGE_WIDTH;
+  const pageWidth = PAGE_WIDTH;
+  let pageHeight, imgX, imgY, imgWidth, imgHeight;
+  if (padding) {
     pageHeight = PAGE_HEIGHT;
-    // Only reserve room for what's actually printed outside the graphic.
-    const topOfImageY = PAGE_HEIGHT - MARGIN - (greetingAbove ? GREETING_SIZE + GAP_BELOW_GREETING : 0);
-    const bottomOfImageY = hasSignature ? MARGIN + SIGNATURE_BLOCK_HEIGHT : MARGIN;
+    const topOfImageY = PAGE_HEIGHT - (topBand || MARGIN);
+    const bottomOfImageY = bottomBand || MARGIN;
     const availableHeight = topOfImageY - bottomOfImageY;
 
     imgWidth = PAGE_WIDTH - MARGIN * 2;
@@ -99,10 +96,16 @@ export async function addLetterPage(book, name, { signatureName, signatureTitle,
     // narrower than the text column (e.g. a tall portrait image).
     imgX = MARGIN;
     imgY = topOfImageY - imgHeight;
+  } else {
+    imgWidth = pageWidth;
+    imgHeight = (image.height / image.width) * pageWidth;
+    imgX = 0;
+    imgY = bottomBand;
+    pageHeight = bottomBand + imgHeight + topBand;
   }
-  const contentWidth = pageWidth - MARGIN * 2;
-  // Keeps text inside the page; a borderless page only needs a small inset.
-  const edge = graphicOnly ? 8 : MARGIN;
+  const contentWidth = pageWidth - inset * 2;
+  // Keeps a greeting dragged onto the graphic inside the printable page.
+  const edge = padding ? MARGIN : 8;
 
   const page = pdfDoc.addPage([pageWidth, pageHeight]);
   book.pageIndices.push(pdfDoc.getPageCount() - 1);
@@ -129,8 +132,8 @@ export async function addLetterPage(book, name, { signatureName, signatureTitle,
     } else {
       // Above the graphic (default)
       page.drawText(greeting, {
-        x: MARGIN,
-        y: PAGE_HEIGHT - MARGIN - GREETING_SIZE,
+        x: inset,
+        y: pageHeight - inset - GREETING_SIZE,
         size: greetingSize,
         font: boldFont,
         color: rgb(0.1, 0.1, 0.1),
@@ -163,8 +166,8 @@ export async function addLetterPage(book, name, { signatureName, signatureTitle,
     const nameSize = fitTextSize(boldFont, signatureName || "", SIGNATURE_NAME_SIZE, 8, contentWidth);
     if (signatureTitle) {
       page.drawText(signatureTitle, {
-        x: MARGIN,
-        y: MARGIN,
+        x: inset,
+        y: inset,
         size: titleSize,
         font: regularFont,
         color: rgb(0.25, 0.25, 0.25),
@@ -172,8 +175,8 @@ export async function addLetterPage(book, name, { signatureName, signatureTitle,
     }
     if (signatureName) {
       page.drawText(signatureName, {
-        x: MARGIN,
-        y: MARGIN + SIGNATURE_TITLE_SIZE + SIGNATURE_LINE_GAP,
+        x: inset,
+        y: inset + SIGNATURE_TITLE_SIZE + SIGNATURE_LINE_GAP,
         size: nameSize,
         font: boldFont,
         color: rgb(0.1, 0.1, 0.1),

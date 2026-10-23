@@ -23,6 +23,7 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
   const [typography, setTypography] = useState("sans-serif");
   const [includeGreeting, setIncludeGreeting] = useState(true);
   const [includeSignature, setIncludeSignature] = useState(true);
+  const [padding, setPadding] = useState(false);
   const [greetingPos, setGreetingPos] = useState(null); // null = above graphic; {x,y} = inside graphic
   const [busy, setBusy] = useState(false);
 
@@ -70,6 +71,7 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
         typography,
         includeGreeting,
         greetingPos: includeGreeting ? greetingPos : null,
+        padding,
       });
       downloadBlob(blob, `${campaignName.trim().replace(/[^a-z0-9]+/gi, "_")}-qr-codes.zip`);
       toast.success("Done — QR codes downloaded as a zip.", { id: toastId });
@@ -82,6 +84,7 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
       setTypography("sans-serif");
       setIncludeGreeting(true);
       setIncludeSignature(true);
+      setPadding(false);
       setGreetingPos(null);
       fileInput.current.value = "";
       graphicInput.current.value = "";
@@ -112,7 +115,7 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
         (the name column is found automatically, e.g. "Name" or "Contact Name"). Optionally upload
         a letter graphic (PNG/JPEG) — if provided, the zip also gets one combined "All Letters.pdf"
         for printing, one page per person with their own QR code. The greeting and signature
-        footer are optional; with neither, each page is just the graphic, edge to edge. If the
+        footer are optional, and pages are borderless unless you tick the white-margin option. If the
         graphic has a blank placeholder box (e.g. "scan this"), calibrate it below so each
         person's real QR code gets stamped into it.
       </p>
@@ -232,6 +235,15 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
                 style={{ width: "auto", margin: 0 }}
               />
               Include Personalized Greeting (Dear [Name] ji,)
+            </label>
+            <label className="field-label" style={{ flexDirection: "row", alignItems: "center", gap: "8px", fontWeight: "normal", marginTop: "8px" }}>
+              <input
+                type="checkbox"
+                checked={padding}
+                onChange={(e) => setPadding(e.target.checked)}
+                style={{ width: "auto", margin: 0 }}
+              />
+              Add white margin around the graphic (off = graphic fills the page edge to edge)
             </label>
           </>
         )}
