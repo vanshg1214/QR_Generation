@@ -21,12 +21,21 @@ const MAX_SIGNATURE_FIELD_LENGTH = 200;
 // Unambiguous alphabet (no 0/O, 1/I/l) since these codes may occasionally be typed manually.
 const nanoid = customAlphabet("23456789ABCDEFGHJKLMNPQRSTUVWXYZ", 8);
 
-async function generateUniqueCode(client) {
-  for (;;) {
-    const code = nanoid();
-    const { rows } = await client.query("SELECT 1 FROM codes WHERE code = $1", [code]);
-    if (rows.length === 0) return code;
+// Generates `count` codes unique among themselves and against every code already stored,
+// in one round trip per attempt (collisions are astronomically rare at 32^8 combinations).
+async function generateUniqueCodes(client, count) {
+  const codes = new Set();
+  while (codes.size < count) {
+    const batch = new Set();
+    while (batch.size < count - codes.size) {
+      const code = nanoid();
+      if (!codes.has(code)) batch.add(code);
+    }
+    const { rows } = await client.query("SELECT code FROM codes WHERE code = ANY($1::text[])", [[...batch]]);
+    for (const { code } of rows) batch.delete(code);
+    for (const code of batch) codes.add(code);
   }
+  return [...codes];
 }
 
 function sanitizeFilename(name) {
@@ -183,25 +192,35 @@ uploadRoutes.post(
       resolvedBoxes.push({ campaignLinkId: link.id, x: box.x, y: box.y, width: box.width, height: box.height });
     }
 
-    const people = [];
-    for (const { name, details } of sheetRows) {
-      const { rows: personRows } = await client.query(
-        "INSERT INTO people (campaign_id, name, details_json) VALUES ($1, $2, $3) RETURNING id",
-        [campaignId, name, JSON.stringify(details)]
-      );
-      const personId = personRows[0].id;
+    // Bulk inserts: the database is remote, so per-row queries (3 round trips per person
+    // per link) made big sheets take minutes. This is a fixed handful of queries instead.
+    const { rows: idRows } = await client.query(
+      "SELECT nextval(pg_get_serial_sequence('people', 'id'))::int AS id FROM generate_series(1, $1)",
+      [sheetRows.length]
+    );
+    const personIds = idRows.map((r) => r.id);
+    await client.query(
+      `INSERT INTO people (id, campaign_id, name, details_json)
+       SELECT id, $1, name, details FROM unnest($2::int[], $3::text[], $4::text[]) AS t(id, name, details)`,
+      [campaignId, personIds, sheetRows.map((r) => r.name), sheetRows.map((r) => JSON.stringify(r.details))]
+    );
 
-      const codes = [];
-      for (const link of linkRows) {
-        const code = await generateUniqueCode(client);
-        await client.query(
-          "INSERT INTO codes (person_id, campaign_link_id, code) VALUES ($1, $2, $3)",
-          [personId, link.id, code]
-        );
-        codes.push({ label: link.label, code, campaignLinkId: link.id });
-      }
-      people.push({ name, codes });
-    }
+    const allCodes = await generateUniqueCodes(client, sheetRows.length * linkRows.length);
+    const codePersonIds = [];
+    const codeLinkIds = [];
+    const people = sheetRows.map(({ name }, i) => {
+      const codes = linkRows.map((link, j) => {
+        codePersonIds.push(personIds[i]);
+        codeLinkIds.push(link.id);
+        return { label: link.label, code: allCodes[i * linkRows.length + j], campaignLinkId: link.id };
+      });
+      return { name, codes };
+    });
+    await client.query(
+      `INSERT INTO codes (person_id, campaign_link_id, code)
+       SELECT * FROM unnest($1::int[], $2::int[], $3::text[])`,
+      [codePersonIds, codeLinkIds, allCodes]
+    );
     return { campaignId, people, resolvedBoxes };
   });
 
