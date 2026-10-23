@@ -3,8 +3,8 @@ import { pool } from "../db.js";
 import { requireAuth } from "../auth.js";
 import QRCode from "qrcode";
 import archiver from "archiver";
-import { failZip, shouldIncludeIndividualLetters } from "../zipStream.js";
-import { createLetterBook, extractLetterPage, saveLetterBook, addPersonLetter } from "../letters.js";
+import { failZip } from "../zipStream.js";
+import { createLetterBook, saveLetterBook, addPersonLetter } from "../letters.js";
 
 export const campaignRoutes = Router();
 
@@ -343,19 +343,15 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
     }
 
     const combinedBytes = book ? await saveLetterBook(book) : null;
-    const includeIndividual = book && shouldIncludeIndividualLetters(graphicData.length, personFolders.length);
 
     res.setHeader("Content-Type", "application/zip");
     res.setHeader("Content-Disposition", `attachment; filename="${sanitizeFilename(campaignName)}-qr-codes.zip"`);
     archive.pipe(res);
 
     for (const f of qrFiles) archive.append(f.data, { name: f.name });
-    if (includeIndividual) {
-      for (let i = 0; i < personFolders.length; i++) {
-        const letterBytes = await extractLetterPage(book, i);
-        archive.append(Buffer.from(letterBytes), { name: `${personFolders[i]}/Letter.pdf` });
-      }
-    }
+    // One combined PDF for printing: one page per person, the graphic embedded once. Per-person
+    // Letter.pdf files are deliberately not included -- each would carry its own full copy of
+    // the graphic (hundreds of MB for a large campaign) and can't be produced without it.
     if (combinedBytes) archive.append(Buffer.from(combinedBytes), { name: "All Letters.pdf" });
 
     await archive.finalize();
