@@ -78,6 +78,16 @@ export async function addLetterPage(book, name, { signatureName, signatureTitle,
   const page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
   book.pageIndices.push(pdfDoc.getPageCount() - 1);
 
+  // Left-align with the greeting/signature text (both pinned at x=MARGIN) --
+  // not centered -- so the graphic and the text share one vertical edge and
+  // read as one piece, instead of the graphic drifting right whenever it's
+  // narrower than the text column (e.g. a tall portrait image).
+  const imgX = MARGIN;
+  const imgY = topOfImageY - imgHeight;
+
+  // Graphic first, so a greeting positioned inside it is drawn on top, not under it.
+  page.drawImage(image, { x: imgX, y: imgY, width: imgWidth, height: imgHeight });
+
   if (includeGreeting) {
     const greeting = `Dear ${name} ji,`;
     const greetingSize = fitTextSize(boldFont, greeting, GREETING_SIZE, 8, contentWidth);
@@ -105,14 +115,6 @@ export async function addLetterPage(book, name, { signatureName, signatureTitle,
       });
     }
   }
-
-  // Left-align with the greeting/signature text (both pinned at x=MARGIN) --
-  // not centered -- so the graphic and the text share one vertical edge and
-  // read as one piece, instead of the graphic drifting right whenever it's
-  // narrower than the text column (e.g. a tall portrait image).
-  const imgX = MARGIN;
-  const imgY = topOfImageY - imgHeight;
-  page.drawImage(image, { x: imgX, y: imgY, width: imgWidth, height: imgHeight });
 
   for (const stamp of qrStamps) {
     const qrImage = await pdfDoc.embedPng(stamp.qrPngBytes);

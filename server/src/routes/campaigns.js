@@ -3,6 +3,7 @@ import { pool } from "../db.js";
 import { requireAuth } from "../auth.js";
 import QRCode from "qrcode";
 import archiver from "archiver";
+import { failZip, shouldIncludeIndividualLetters } from "../zipStream.js";
 import { createLetterBook, extractLetterPage, saveLetterBook, addPersonLetter } from "../letters.js";
 
 export const campaignRoutes = Router();
@@ -293,13 +294,6 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
     height: r.height,
   }));
 
-  res.setHeader("Content-Type", "application/zip");
-  res.setHeader("Content-Disposition", `attachment; filename="${sanitizeFilename(campaignName)}-qr-codes.zip"`);
-
-  const archive = archiver("zip", { zlib: { level: 1 } });
-  archive.on("error", (err) => res.status(500).end(String(err)));
-  archive.pipe(res);
-
   // Group by person
   const byPerson = new Map();
   for (const row of rows) {
@@ -309,46 +303,63 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
       .push({ label: row.link_label, code: row.code, campaignLinkId: row.campaign_link_id });
   }
 
-  // The campaign graphic is embedded ONCE into a shared "book" and reused for
-  // every person's page -- re-embedding a multi-megabyte image per person is
-  // what made this slow.
-  const book = graphicData ? await createLetterBook(graphicData, graphicMime, typography) : null;
+  const archive = archiver("zip", { zlib: { level: 1 } });
+  archive.on("error", (err) => failZip(res, archive, err));
 
-  const personFolders = [];
-  const personFolderName = uniqueNamer();
-  for (const [personName, links] of byPerson) {
-    const folder = personFolderName(personName);
-    personFolders.push(folder);
-    const linkFileName = uniqueNamer();
-    for (const { label, code } of links) {
-      const url = `${publicBaseUrl}/r/${code}`;
-      const pngBuffer = await QRCode.toBuffer(url, { width: 512, margin: 2 });
-      archive.append(pngBuffer, { name: `${folder}/${linkFileName(label)}.png` });
+  try {
+    // Everything that can fail (building the PDFs) happens BEFORE any bytes are sent,
+    // so a failure returns a clean error instead of a truncated, invalid zip.
+    // The campaign graphic is embedded ONCE into a shared "book" and reused for
+    // every person's page -- re-embedding a multi-megabyte image per person is
+    // what made this slow.
+    const book = graphicData ? await createLetterBook(graphicData, graphicMime, typography) : null;
+
+    const personFolders = [];
+    const qrFiles = [];
+    const personFolderName = uniqueNamer();
+    for (const [personName, links] of byPerson) {
+      const folder = personFolderName(personName);
+      personFolders.push(folder);
+      const linkFileName = uniqueNamer();
+      for (const { label, code } of links) {
+        const url = `${publicBaseUrl}/r/${code}`;
+        const pngBuffer = await QRCode.toBuffer(url, { width: 512, margin: 2 });
+        qrFiles.push({ name: `${folder}/${linkFileName(label)}.png`, data: pngBuffer });
+      }
+
+      if (book) {
+        await addPersonLetter({
+          book,
+          personName,
+          codesForPerson: links,
+          boxes,
+          signatureName,
+          signatureTitle,
+          includeGreeting,
+          greetingPos,
+          publicBaseUrl,
+        });
+      }
     }
 
-    if (book) {
-      await addPersonLetter({
-        book,
-        personName,
-        codesForPerson: links,
-        boxes,
-        signatureName,
-        signatureTitle,
-        includeGreeting,
-        greetingPos,
-        publicBaseUrl,
-      });
+    const combinedBytes = book ? await saveLetterBook(book) : null;
+    const includeIndividual = book && shouldIncludeIndividualLetters(graphicData.length, personFolders.length);
+
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="${sanitizeFilename(campaignName)}-qr-codes.zip"`);
+    archive.pipe(res);
+
+    for (const f of qrFiles) archive.append(f.data, { name: f.name });
+    if (includeIndividual) {
+      for (let i = 0; i < personFolders.length; i++) {
+        const letterBytes = await extractLetterPage(book, i);
+        archive.append(Buffer.from(letterBytes), { name: `${personFolders[i]}/Letter.pdf` });
+      }
     }
+    if (combinedBytes) archive.append(Buffer.from(combinedBytes), { name: "All Letters.pdf" });
+
+    await archive.finalize();
+  } catch (err) {
+    failZip(res, archive, err);
   }
-
-  if (book) {
-    for (let i = 0; i < personFolders.length; i++) {
-      const letterBytes = await extractLetterPage(book, i);
-      archive.append(Buffer.from(letterBytes), { name: `${personFolders[i]}/Letter.pdf` });
-    }
-    const combinedBytes = await saveLetterBook(book);
-    archive.append(Buffer.from(combinedBytes), { name: "All Letters.pdf" });
-  }
-
-  await archive.finalize();
 });
