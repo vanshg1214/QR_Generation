@@ -10,8 +10,10 @@ const DEFAULT_SIGNATURE_TITLE = "Export Marketing Strategist";
 const PREVIEW_NAME = "Rajesh Kumar";
 const DEFAULT_NAME_COLOR = "#1a1a1a";
 
-function emptyLink() {
-  return { uid: crypto.randomUUID(), label: "", destinationUrl: "" };
+// Links are pre-named L-1, L-2, ... so every link (and every QR box) has a usable label
+// from the start; the user can rename them.
+function emptyLink(number = 1) {
+  return { uid: crypto.randomUUID(), label: `L-${number}`, destinationUrl: "" };
 }
 
 export default function CreateCampaignPanel({ onCreated, onCancel }) {
@@ -51,7 +53,7 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
   }
 
   function addLink() {
-    setLinks((prev) => (prev.length >= MAX_LINKS ? prev : [...prev, emptyLink()]));
+    setLinks((prev) => (prev.length >= MAX_LINKS ? prev : [...prev, emptyLink(prev.length + 1)]));
   }
 
   function removeLink(index) {
@@ -69,10 +71,10 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
 
     // Resolve each box's link assignment to that link's current array
     // position -- the server doesn't have real link ids until it inserts
-    // them in this same request. Drop boxes with no (or a stale) assignment.
+    // them in this same request. A box is never left without a link: one with no (or a
+    // removed) assignment uses the first link, matching what its dropdown shows.
     const resolvedBoxes = boxes
-      .map((box) => ({ ...box, linkIndex: links.findIndex((l) => l.uid === box.linkUid) }))
-      .filter((box) => box.linkIndex !== -1)
+      .map((box) => ({ ...box, linkIndex: Math.max(0, links.findIndex((l) => l.uid === box.linkUid)) }))
       .map(({ linkIndex, x, y, width, height }) => ({ linkIndex, x, y, width, height }));
 
     setBusy(true);

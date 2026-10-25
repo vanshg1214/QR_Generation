@@ -11,13 +11,13 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
-function candidateToBox(c) {
-  return { boxId: crypto.randomUUID(), x: c.x, y: c.y, width: c.width, height: c.height, linkUid: null };
+function candidateToBox(c, linkUid) {
+  return { boxId: crypto.randomUUID(), x: c.x, y: c.y, width: c.width, height: c.height, linkUid };
 }
 
 function detectFromImage(imageUrl, onDone) {
   const img = new Image();
-  img.onload = () => onDone(detectBlankBoxes(img).map(candidateToBox), img);
+  img.onload = () => onDone(detectBlankBoxes(img), img);
   img.src = imageUrl;
 }
 
@@ -82,7 +82,7 @@ export default function LetterGraphicCalibrator({
     setImageUrl(url);
     setDetecting(true);
     detectFromImage(url, (detected, img) => {
-      onBoxesChange(detected);
+      onBoxesChange(detected.map((c) => candidateToBox(c, links[0]?.uid ?? null)));
       onColorSampler?.(createColorSampler(img));
       setDetecting(false);
     });
@@ -99,7 +99,7 @@ export default function LetterGraphicCalibrator({
   }
 
   function addBox() {
-    onBoxesChange([...boxes, { boxId: crypto.randomUUID(), x: 0.4, y: 0.4, width: 0.15, height: 0.15, linkUid: null }]);
+    onBoxesChange([...boxes, { boxId: crypto.randomUUID(), x: 0.4, y: 0.4, width: 0.15, height: 0.15, linkUid: links[0]?.uid ?? null }]);
   }
 
   function redetect() {
@@ -110,7 +110,7 @@ export default function LetterGraphicCalibrator({
     }
     setDetecting(true);
     detectFromImage(imageUrl, (detected) => {
-      onBoxesChange(detected);
+      onBoxesChange(detected.map((c) => candidateToBox(c, links[0]?.uid ?? null)));
       setDetecting(false);
     });
   }
@@ -304,10 +304,9 @@ export default function LetterGraphicCalibrator({
             ))}
             <div className="qr-box-controls" onPointerDown={(e) => e.stopPropagation()}>
               <select
-                value={links.some((l) => l.uid === box.linkUid) ? box.linkUid : ""}
-                onChange={(e) => updateBox(box.boxId, { linkUid: e.target.value || null })}
+                value={links.some((l) => l.uid === box.linkUid) ? box.linkUid : links[0]?.uid}
+                onChange={(e) => updateBox(box.boxId, { linkUid: e.target.value })}
               >
-                <option value="">Unassigned</option>
                 {links.map((link, i) => (
                   <option key={link.uid} value={link.uid}>
                     {link.label.trim() || `Link ${i + 1}`}
