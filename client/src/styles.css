@@ -709,6 +709,61 @@ tbody tr:hover {
   cursor: pointer;
 }
 
+.caption-style-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.caption-style-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.caption-style-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: normal;
+}
+
+.caption-style-label {
+  min-width: 60px;
+  font-weight: 600;
+}
+
+.caption-style-row select {
+  width: auto;
+}
+
+.caption-style-row input[type="range"] {
+  width: 110px;
+  padding: 0;
+}
+
+.caption-size-value {
+  min-width: 38px;
+  font-variant-numeric: tabular-nums;
+}
+
+.caption-style-row input[type="color"] {
+  width: 36px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.caption-style-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* Draggable greeting overlay in the calibrator */
 .greeting-overlay {
   position: absolute;

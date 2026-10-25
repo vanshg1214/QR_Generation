@@ -2,13 +2,19 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import { api, downloadBlob } from "../api.js";
 import LetterGraphicCalibrator from "./LetterGraphicCalibrator.jsx";
-import { DEFAULT_QR_CAPTION } from "../../../server/src/qrCaptionLayout.js";
+import {
+  DEFAULT_QR_CAPTION,
+  DEFAULT_CAPTION_STYLE,
+  MIN_TEXT_SCALE,
+  MAX_TEXT_SCALE,
+} from "../../../server/src/qrCaptionLayout.js";
 
 const MAX_LINKS = 10;
 const DEFAULT_SIGNATURE_NAME = "Nitin Gupta";
 const DEFAULT_SIGNATURE_TITLE = "Export Marketing Strategist";
 const PREVIEW_NAME = "Rajesh Kumar";
 const DEFAULT_NAME_COLOR = "#1a1a1a";
+const WEIGHT_LABELS = { regular: "Regular", medium: "Medium", semibold: "Semi-bold", bold: "Bold" };
 
 // Links are pre-named L-1, L-2, ... so every link (and every QR box) has a usable label
 // from the start; the user can rename them.
@@ -31,6 +37,7 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
   const [padding, setPadding] = useState(false);
   const [showCaption, setShowCaption] = useState(false);
   const [captionText, setCaptionText] = useState(DEFAULT_QR_CAPTION);
+  const [captionStyle, setCaptionStyle] = useState(DEFAULT_CAPTION_STYLE); // weight + size per line
   const [nameColor, setNameColor] = useState(DEFAULT_NAME_COLOR);
   const [captionColor, setCaptionColor] = useState(DEFAULT_NAME_COLOR);
   const [colorsAuto, setColorsAuto] = useState(true); // false once the user picks a colour
@@ -47,6 +54,10 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
   }, [showCaption, colorsAuto, colorSampler, boxes]);
   const [greetingPos, setGreetingPos] = useState(null); // null = above graphic; {x,y} = inside graphic
   const [busy, setBusy] = useState(false);
+
+  function updateCaptionStyle(key, value) {
+    setCaptionStyle((prev) => ({ ...prev, [key]: value }));
+  }
 
   function updateLink(index, field, value) {
     setLinks((prev) => prev.map((l, i) => (i === index ? { ...l, [field]: value } : l)));
@@ -93,7 +104,7 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
         includeGreeting,
         greetingPos: includeGreeting ? greetingPos : null,
         padding,
-        qrCaption: showCaption ? { text: captionText.trim(), nameColor, captionColor } : null,
+        qrCaption: showCaption ? { text: captionText.trim(), nameColor, captionColor, ...captionStyle } : null,
       });
       downloadBlob(blob, `${campaignName.trim().replace(/[^a-z0-9]+/gi, "_")}-qr-codes.zip`);
       toast.success("Done — QR codes downloaded as a zip.", { id: toastId });
@@ -109,6 +120,7 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
       setPadding(false);
       setShowCaption(false);
       setCaptionText(DEFAULT_QR_CAPTION);
+      setCaptionStyle(DEFAULT_CAPTION_STYLE);
       setColorsAuto(true);
       setGreetingPos(null);
       fileInput.current.value = "";
@@ -212,7 +224,7 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
               includeGreeting={includeGreeting}
               greetingPos={greetingPos}
               onGreetingPosChange={setGreetingPos}
-              qrCaption={showCaption ? { text: captionText, nameColor, captionColor } : null}
+              qrCaption={showCaption ? { text: captionText, nameColor, captionColor, ...captionStyle } : null}
               previewName={PREVIEW_NAME}
               onColorSampler={(sampler) => setColorSampler(() => sampler)}
             />
@@ -237,32 +249,68 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
                     placeholder={DEFAULT_QR_CAPTION}
                   />
                 </label>
-                <div className="caption-color-row">
-                  <label>
-                    <input
-                      type="color"
-                      value={nameColor}
-                      onChange={(e) => {
-                        setColorsAuto(false);
-                        setNameColor(e.target.value);
-                      }}
-                    />
-                    Name colour
-                  </label>
-                  <label>
-                    <input
-                      type="color"
-                      value={captionColor}
-                      onChange={(e) => {
-                        setColorsAuto(false);
-                        setCaptionColor(e.target.value);
-                      }}
-                    />
-                    Caption colour
-                  </label>
-                  <button type="button" className="secondary" onClick={() => setColorsAuto(true)} disabled={colorsAuto}>
-                    {colorsAuto ? "Colours matched to graphic" : "Match colours to graphic"}
-                  </button>
+                <div className="caption-style-grid">
+                  {[
+                    { key: "name", label: "Name", color: nameColor, setColor: setNameColor },
+                    { key: "caption", label: "Caption", color: captionColor, setColor: setCaptionColor },
+                  ].map((row) => {
+                    const weightKey = `${row.key}Weight`;
+                    const scaleKey = `${row.key}Scale`;
+                    return (
+                      <div className="caption-style-row" key={row.key}>
+                        <span className="caption-style-label">{row.label}</span>
+                        <label>
+                          Weight
+                          <select
+                            value={captionStyle[weightKey]}
+                            onChange={(e) => updateCaptionStyle(weightKey, e.target.value)}
+                          >
+                            {Object.entries(WEIGHT_LABELS).map(([value, text]) => (
+                              <option key={value} value={value}>
+                                {text}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          Size
+                          <input
+                            type="range"
+                            min={MIN_TEXT_SCALE * 100}
+                            max={MAX_TEXT_SCALE * 100}
+                            step={5}
+                            value={Math.round(captionStyle[scaleKey] * 100)}
+                            onChange={(e) => updateCaptionStyle(scaleKey, Number(e.target.value) / 100)}
+                          />
+                          <span className="caption-size-value">{Math.round(captionStyle[scaleKey] * 100)}%</span>
+                        </label>
+                        <label>
+                          Colour
+                          <input
+                            type="color"
+                            value={row.color}
+                            onChange={(e) => {
+                              setColorsAuto(false);
+                              row.setColor(e.target.value);
+                            }}
+                          />
+                        </label>
+                      </div>
+                    );
+                  })}
+                  <div className="caption-style-actions">
+                    <button type="button" className="secondary" onClick={() => setColorsAuto(true)} disabled={colorsAuto}>
+                      {colorsAuto ? "Colours matched to graphic" : "Match colours to graphic"}
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => setCaptionStyle(DEFAULT_CAPTION_STYLE)}
+                      disabled={JSON.stringify(captionStyle) === JSON.stringify(DEFAULT_CAPTION_STYLE)}
+                    >
+                      Reset size &amp; weight
+                    </button>
+                  </div>
                 </div>
                 <p className="muted small" style={{ margin: 0 }}>
                   The QR, name and caption all fit inside the box you place — make the box a little taller than wide so there's room for the text. The preview above shows how it will print.

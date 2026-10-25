@@ -8,6 +8,7 @@ import { withTransaction } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { failZip } from "../zipStream.js";
 import { createLetterBook, saveLetterBook, addPersonLetter } from "../letters.js";
+import { normalizeCaptionStyle } from "../qrCaptionLayout.js";
 
 export const uploadRoutes = Router();
 
@@ -121,10 +122,11 @@ uploadRoutes.post(
       const parsed = JSON.parse(req.body.qrCaption);
       const isColor = (c) => typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c);
       const text = typeof parsed.text === "string" ? parsed.text.trim() : "";
-      if (text.length > MAX_QR_CAPTION_LENGTH || !isColor(parsed.nameColor) || !isColor(parsed.captionColor)) {
+      const style = normalizeCaptionStyle(parsed);
+      if (text.length > MAX_QR_CAPTION_LENGTH || !isColor(parsed.nameColor) || !isColor(parsed.captionColor) || !style) {
         return res.status(400).json({ error: "The QR caption settings are invalid" });
       }
-      qrCaption = { text, nameColor: parsed.nameColor, captionColor: parsed.captionColor };
+      qrCaption = { text, nameColor: parsed.nameColor, captionColor: parsed.captionColor, ...style };
     } catch {
       return res.status(400).json({ error: "qrCaption must be valid JSON" });
     }
@@ -255,7 +257,7 @@ uploadRoutes.post(
     // The campaign graphic is embedded ONCE into a shared "book" and reused for
     // every person's page -- re-embedding a multi-megabyte image per person is
     // what made this slow (a 28-person campaign took 44s before this).
-    const book = graphicFile ? await createLetterBook(graphicFile.buffer, graphicFile.mimetype, typography, { withPoppins: Boolean(qrCaption) }) : null;
+    const book = graphicFile ? await createLetterBook(graphicFile.buffer, graphicFile.mimetype, typography, { qrCaption }) : null;
 
     const personFolders = [];
     const qrFiles = [];

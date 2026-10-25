@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { detectBlankBoxes } from "../lib/detectBlankBoxes.js";
 import { createColorSampler } from "../lib/graphicColors.js";
-import { layoutQrCaption, LINE_HEIGHT } from "../../../server/src/qrCaptionLayout.js";
+import { layoutQrCaption, LINE_HEIGHT, CAPTION_WEIGHTS } from "../../../server/src/qrCaptionLayout.js";
 
 const MIN_BOX_SIZE = 0.02;
 const DEFAULT_GREETING_X = 0.03; // fraction of graphic width
@@ -26,7 +26,7 @@ function detectFromImage(imageUrl, onDone) {
 let measureCtx = null;
 function measurePoppins(text, weight, size) {
   measureCtx ??= document.createElement("canvas").getContext("2d");
-  measureCtx.font = `${weight === "semibold" ? 600 : 500} ${size}px Poppins`;
+  measureCtx.font = `${CAPTION_WEIGHTS[weight]} ${size}px Poppins`;
   return measureCtx.measureText(text).width;
 }
 
@@ -56,7 +56,7 @@ export default function LetterGraphicCalibrator({
   useEffect(() => {
     // Poppins comes from Google Fonts; re-measure the preview once it has loaded.
     if (!document.fonts) return setFontsReady(true);
-    Promise.all([document.fonts.load("600 20px Poppins"), document.fonts.load("500 20px Poppins")])
+    Promise.all(Object.values(CAPTION_WEIGHTS).map((w) => document.fonts.load(`${w} 20px Poppins`)))
       .catch(() => {})
       .finally(() => setFontsReady(true));
   }, []);
@@ -255,6 +255,7 @@ export default function LetterGraphicCalibrator({
                   name: previewName,
                   caption: qrCaption.text,
                   measure: measurePoppins,
+                  style: qrCaption,
                 })
               : null;
           const patternStyle = captionLayout
@@ -295,7 +296,7 @@ export default function LetterGraphicCalibrator({
                   top: line.top,
                   fontSize: line.size,
                   lineHeight: `${line.size * LINE_HEIGHT}px`,
-                  fontWeight: line.weight === "semibold" ? 600 : 500,
+                  fontWeight: CAPTION_WEIGHTS[line.weight],
                   color: line.role === "name" ? qrCaption.nameColor : qrCaption.captionColor,
                 }}
               >

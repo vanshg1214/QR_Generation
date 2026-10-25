@@ -315,7 +315,7 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
     // The campaign graphic is embedded ONCE into a shared "book" and reused for
     // every person's page -- re-embedding a multi-megabyte image per person is
     // what made this slow.
-    const book = graphicData ? await createLetterBook(graphicData, graphicMime, typography, { withPoppins: Boolean(qrCaption) }) : null;
+    const book = graphicData ? await createLetterBook(graphicData, graphicMime, typography, { qrCaption }) : null;
 
     const personFolders = [];
     const qrFiles = [];
