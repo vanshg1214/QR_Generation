@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { detectBlankBoxes } from "../lib/detectBlankBoxes.js";
+import { createColorSampler } from "../lib/graphicColors.js";
+import { layoutQrCaption, LINE_HEIGHT } from "../../../server/src/qrCaptionLayout.js";
 
 const MIN_BOX_SIZE = 0.02;
 const DEFAULT_GREETING_X = 0.03; // fraction of graphic width
@@ -15,8 +17,17 @@ function candidateToBox(c) {
 
 function detectFromImage(imageUrl, onDone) {
   const img = new Image();
-  img.onload = () => onDone(detectBlankBoxes(img).map(candidateToBox));
+  img.onload = () => onDone(detectBlankBoxes(img).map(candidateToBox), img);
   img.src = imageUrl;
+}
+
+// Measures text in Poppins the same way the PDF does (via the shared layout), so the
+// preview matches what gets printed.
+let measureCtx = null;
+function measurePoppins(text, weight, size) {
+  measureCtx ??= document.createElement("canvas").getContext("2d");
+  measureCtx.font = `${weight === "semibold" ? 600 : 500} ${size}px Poppins`;
+  return measureCtx.measureText(text).width;
 }
 
 // Lets the user calibrate where each person's QR code should be stamped onto
@@ -31,12 +42,24 @@ export default function LetterGraphicCalibrator({
   includeGreeting,
   greetingPos,        // { x, y } fractions of graphic, or null = above graphic
   onGreetingPosChange,
+  qrCaption,          // null, or { text, nameColor, captionColor } -- previewed under each QR
+  previewName,
+  onColorSampler,     // receives a function box -> suggested { nameColor, captionColor }
 }) {
   const [imageUrl, setImageUrl] = useState(null);
   const [detecting, setDetecting] = useState(false);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const containerRef = useRef(null);
   const dragState = useRef(null);
+  const [fontsReady, setFontsReady] = useState(false);
+
+  useEffect(() => {
+    // Poppins comes from Google Fonts; re-measure the preview once it has loaded.
+    if (!document.fonts) return setFontsReady(true);
+    Promise.all([document.fonts.load("600 20px Poppins"), document.fonts.load("500 20px Poppins")])
+      .catch(() => {})
+      .finally(() => setFontsReady(true));
+  }, []);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -58,8 +81,9 @@ export default function LetterGraphicCalibrator({
     const url = URL.createObjectURL(graphicFile);
     setImageUrl(url);
     setDetecting(true);
-    detectFromImage(url, (detected) => {
+    detectFromImage(url, (detected, img) => {
       onBoxesChange(detected);
+      onColorSampler?.(createColorSampler(img));
       setDetecting(false);
     });
     return () => URL.revokeObjectURL(url);
@@ -223,15 +247,31 @@ export default function LetterGraphicCalibrator({
           const boxPxWidth = box.width * containerSize.width;
           const boxPxHeight = box.height * containerSize.height;
           const qrPx = Math.min(boxPxWidth, boxPxHeight);
-          const patternStyle =
-            containerSize.width > 0
-              ? {
-                  left: (boxPxWidth - qrPx) / 2,
-                  top: (boxPxHeight - qrPx) / 2,
-                  width: qrPx,
-                  height: qrPx,
-                }
-              : { inset: 0 };
+          const captionLayout =
+            qrCaption && fontsReady && containerSize.width > 0
+              ? layoutQrCaption({
+                  boxW: boxPxWidth,
+                  boxH: boxPxHeight,
+                  name: previewName,
+                  caption: qrCaption.text,
+                  measure: measurePoppins,
+                })
+              : null;
+          const patternStyle = captionLayout
+            ? {
+                left: captionLayout.qr.x,
+                top: captionLayout.qr.y,
+                width: captionLayout.qr.size,
+                height: captionLayout.qr.size,
+              }
+            : containerSize.width > 0
+            ? {
+                left: (boxPxWidth - qrPx) / 2,
+                top: (boxPxHeight - qrPx) / 2,
+                width: qrPx,
+                height: qrPx,
+              }
+            : { inset: 0 };
 
           return (
           <div
@@ -246,6 +286,22 @@ export default function LetterGraphicCalibrator({
             {...dragHandlers(box.boxId, "move")}
           >
             <div className="qr-box-pattern" style={patternStyle} />
+            {captionLayout?.lines.map((line, i) => (
+              <div
+                key={i}
+                className="qr-caption-line"
+                style={{
+                  left: line.x,
+                  top: line.top,
+                  fontSize: line.size,
+                  lineHeight: `${line.size * LINE_HEIGHT}px`,
+                  fontWeight: line.weight === "semibold" ? 600 : 500,
+                  color: line.role === "name" ? qrCaption.nameColor : qrCaption.captionColor,
+                }}
+              >
+                {line.text}
+              </div>
+            ))}
             <div className="qr-box-controls" onPointerDown={(e) => e.stopPropagation()}>
               <select
                 value={links.some((l) => l.uid === box.linkUid) ? box.linkUid : ""}

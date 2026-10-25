@@ -1,4 +1,24 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
+import { layoutQrCaption, POPPINS_BASELINE } from "./qrCaptionLayout.js";
+
+const FONTS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fonts");
+let poppinsBytes = null; // read on first use, then reused for every campaign
+function loadPoppins() {
+  poppinsBytes ??= {
+    semibold: fs.readFileSync(path.join(FONTS_DIR, "Poppins-SemiBold.ttf")),
+    medium: fs.readFileSync(path.join(FONTS_DIR, "Poppins-Medium.ttf")),
+  };
+  return poppinsBytes;
+}
+
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
+}
 
 function clamp(val, lo, hi) { return Math.min(Math.max(val, lo), hi); }
 
@@ -32,7 +52,9 @@ function fitTextSize(font, text, startSize, minSize, maxWidth) {
 // campaign instead of once per person is what keeps a large campaign fast
 // (a 28-person campaign with re-embedding per person took 44s; sharing one
 // embed brings that down to a couple of seconds).
-export async function createLetterBook(graphicBytes, graphicMime, typography = "sans-serif") {
+// withPoppins: embed Poppins for the name/caption printed under each QR. Subsetting keeps
+// only the glyphs actually used, so it adds a few KB, not the full font files.
+export async function createLetterBook(graphicBytes, graphicMime, typography = "sans-serif", { withPoppins = false } = {}) {
   const pdfDoc = await PDFDocument.create();
   
   let boldFontStandard = StandardFonts.HelveticaBold;
@@ -51,7 +73,16 @@ export async function createLetterBook(graphicBytes, graphicMime, typography = "
   
   const image =
     graphicMime === "image/png" ? await pdfDoc.embedPng(graphicBytes) : await pdfDoc.embedJpg(graphicBytes);
-  return { pdfDoc, boldFont, regularFont, image, pageIndices: [] };
+  let poppins = null;
+  if (withPoppins) {
+    pdfDoc.registerFontkit(fontkit);
+    const bytes = loadPoppins();
+    poppins = {
+      semibold: await pdfDoc.embedFont(bytes.semibold, { subset: true }),
+      medium: await pdfDoc.embedFont(bytes.medium, { subset: true }),
+    };
+  }
+  return { pdfDoc, boldFont, regularFont, image, poppins, pageIndices: [] };
 }
 
 // Adds one person's letter page to the shared book: the (already-embedded,
@@ -66,7 +97,9 @@ export async function createLetterBook(graphicBytes, graphicMime, typography = "
 // greeting-above or signature actually needs room. With neither, the page IS the
 // graphic, so an A4-proportioned graphic prints as exactly one full A4 page.
 // padding: true = the graphic sits inside an A4 page with white margins.
-export async function addLetterPage(book, name, { signatureName, signatureTitle, qrStamps = [], includeGreeting = true, greetingPos = null, padding = false } = {}) {
+// qrCaption: null, or { text, nameColor, captionColor } -- prints "{name} ji" and the
+// caption under the QR, inside the same box (see qrCaptionLayout.js).
+export async function addLetterPage(book, name, { signatureName, signatureTitle, qrStamps = [], includeGreeting = true, greetingPos = null, padding = false, qrCaption = null } = {}) {
   const { pdfDoc, boldFont, regularFont, image } = book;
 
   const greetingAbove = includeGreeting && !greetingPos;
@@ -149,6 +182,35 @@ export async function addLetterPage(book, name, { signatureName, signatureTitle,
     const boxY = imgY + (1 - stamp.y - stamp.height) * imgHeight;
     const boxW = stamp.width * imgWidth;
     const boxH = stamp.height * imgHeight;
+
+    if (qrCaption && book.poppins) {
+      const fonts = book.poppins;
+      const layout = layoutQrCaption({
+        boxW,
+        boxH,
+        name,
+        caption: qrCaption.text,
+        measure: (text, weight, size) => fonts[weight].widthOfTextAtSize(text, size),
+      });
+      // Layout is top-down within the box; PDF y is bottom-up from the page.
+      const boxTop = boxY + boxH;
+      page.drawImage(qrImage, {
+        x: boxX + layout.qr.x,
+        y: boxTop - layout.qr.y - layout.qr.size,
+        width: layout.qr.size,
+        height: layout.qr.size,
+      });
+      for (const line of layout.lines) {
+        page.drawText(line.text, {
+          x: boxX + line.x,
+          y: boxTop - line.top - line.size * POPPINS_BASELINE,
+          size: line.size,
+          font: fonts[line.weight],
+          color: hexToRgb(line.role === "name" ? qrCaption.nameColor : qrCaption.captionColor),
+        });
+      }
+      continue;
+    }
 
     // Never stretch a QR into a non-square box -- inscribe the largest
     // centered square instead, so it stays scannable.

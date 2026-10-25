@@ -19,6 +19,7 @@ export async function addPersonLetter({
   includeGreeting,
   greetingPos,
   padding,
+  qrCaption,
   publicBaseUrl,
 }) {
   const codeByLinkId = new Map(codesForPerson.map((c) => [c.campaignLinkId, c.code]));
@@ -31,5 +32,5 @@ export async function addPersonLetter({
     qrStamps.push({ x: box.x, y: box.y, width: box.width, height: box.height, qrPngBytes });
   }
 
-  await addLetterPage(book, personName, { signatureName, signatureTitle, qrStamps, includeGreeting, greetingPos, padding });
+  await addLetterPage(book, personName, { signatureName, signatureTitle, qrStamps, includeGreeting, greetingPos, padding, qrCaption });
 }

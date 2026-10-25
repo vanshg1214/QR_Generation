@@ -17,6 +17,7 @@ const ALLOWED_GRAPHIC_MIMES = new Set(["image/png", "image/jpeg"]);
 
 const MAX_LINKS = 10;
 const MAX_SIGNATURE_FIELD_LENGTH = 200;
+const MAX_QR_CAPTION_LENGTH = 80;
 
 // Unambiguous alphabet (no 0/O, 1/I/l) since these codes may occasionally be typed manually.
 const nanoid = customAlphabet("23456789ABCDEFGHJKLMNPQRSTUVWXYZ", 8);
@@ -113,6 +114,22 @@ uploadRoutes.post(
   const includeGreeting = req.body.includeGreeting === "false" ? false : true;
   const padding = req.body.padding === "true";
 
+  // Optional "{name} ji" + caption printed under each QR: { text, nameColor, captionColor }.
+  let qrCaption = null;
+  if (req.body.qrCaption) {
+    try {
+      const parsed = JSON.parse(req.body.qrCaption);
+      const isColor = (c) => typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c);
+      const text = typeof parsed.text === "string" ? parsed.text.trim() : "";
+      if (text.length > MAX_QR_CAPTION_LENGTH || !isColor(parsed.nameColor) || !isColor(parsed.captionColor)) {
+        return res.status(400).json({ error: "The QR caption settings are invalid" });
+      }
+      qrCaption = { text, nameColor: parsed.nameColor, captionColor: parsed.captionColor };
+    } catch {
+      return res.status(400).json({ error: "qrCaption must be valid JSON" });
+    }
+  }
+
   let greetingPos = null;
   try {
     if (req.body.greetingPos) greetingPos = JSON.parse(req.body.greetingPos);
@@ -161,8 +178,8 @@ uploadRoutes.post(
 
   const created = await withTransaction(async (client) => {
     const { rows: campaignRows } = await client.query(
-      "INSERT INTO campaigns (name, signature_name, signature_title, typography, include_greeting, greeting_pos_json, letter_padding) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
-      [campaignName.trim(), signatureName, signatureTitle, typography, includeGreeting, greetingPos ? JSON.stringify(greetingPos) : null, padding]
+      "INSERT INTO campaigns (name, signature_name, signature_title, typography, include_greeting, greeting_pos_json, letter_padding, qr_caption_json) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
+      [campaignName.trim(), signatureName, signatureTitle, typography, includeGreeting, greetingPos ? JSON.stringify(greetingPos) : null, padding, qrCaption ? JSON.stringify(qrCaption) : null]
     );
     const campaignId = campaignRows[0].id;
 
@@ -238,7 +255,7 @@ uploadRoutes.post(
     // The campaign graphic is embedded ONCE into a shared "book" and reused for
     // every person's page -- re-embedding a multi-megabyte image per person is
     // what made this slow (a 28-person campaign took 44s before this).
-    const book = graphicFile ? await createLetterBook(graphicFile.buffer, graphicFile.mimetype, typography) : null;
+    const book = graphicFile ? await createLetterBook(graphicFile.buffer, graphicFile.mimetype, typography, { withPoppins: Boolean(qrCaption) }) : null;
 
     const personFolders = [];
     const qrFiles = [];
@@ -264,6 +281,7 @@ uploadRoutes.post(
           includeGreeting,
           greetingPos,
           padding,
+          qrCaption,
           publicBaseUrl,
         });
       }

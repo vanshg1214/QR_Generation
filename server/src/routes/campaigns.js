@@ -247,7 +247,7 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
   }
 
   const { rows: campaignRows } = await pool.query(
-    "SELECT name, graphic_data, graphic_mime, signature_name, signature_title, typography, include_greeting, greeting_pos_json, letter_padding FROM campaigns WHERE id = $1",
+    "SELECT name, graphic_data, graphic_mime, signature_name, signature_title, typography, include_greeting, greeting_pos_json, letter_padding, qr_caption_json FROM campaigns WHERE id = $1",
     [campaignId]
   );
   if (!campaignRows[0]) {
@@ -261,6 +261,8 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
   const typography = campaignRows[0].typography || "sans-serif";
   const includeGreeting = campaignRows[0].include_greeting ?? true;
   const padding = campaignRows[0].letter_padding ?? false;
+  let qrCaption = null;
+  try { if (campaignRows[0].qr_caption_json) qrCaption = JSON.parse(campaignRows[0].qr_caption_json); } catch { /* ignore */ }
   let greetingPos = null;
   try { if (campaignRows[0].greeting_pos_json) greetingPos = JSON.parse(campaignRows[0].greeting_pos_json); } catch { /* ignore */ }
 
@@ -313,7 +315,7 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
     // The campaign graphic is embedded ONCE into a shared "book" and reused for
     // every person's page -- re-embedding a multi-megabyte image per person is
     // what made this slow.
-    const book = graphicData ? await createLetterBook(graphicData, graphicMime, typography) : null;
+    const book = graphicData ? await createLetterBook(graphicData, graphicMime, typography, { withPoppins: Boolean(qrCaption) }) : null;
 
     const personFolders = [];
     const qrFiles = [];
@@ -339,6 +341,7 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
           includeGreeting,
           greetingPos,
           padding,
+          qrCaption,
           publicBaseUrl,
         });
       }

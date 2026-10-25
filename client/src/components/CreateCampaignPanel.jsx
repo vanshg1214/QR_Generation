@@ -1,11 +1,14 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import { api, downloadBlob } from "../api.js";
 import LetterGraphicCalibrator from "./LetterGraphicCalibrator.jsx";
+import { DEFAULT_QR_CAPTION } from "../../../server/src/qrCaptionLayout.js";
 
 const MAX_LINKS = 10;
 const DEFAULT_SIGNATURE_NAME = "Nitin Gupta";
 const DEFAULT_SIGNATURE_TITLE = "Export Marketing Strategist";
+const PREVIEW_NAME = "Rajesh Kumar";
+const DEFAULT_NAME_COLOR = "#1a1a1a";
 
 function emptyLink() {
   return { uid: crypto.randomUUID(), label: "", destinationUrl: "" };
@@ -24,6 +27,22 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
   const [includeGreeting, setIncludeGreeting] = useState(true);
   const [includeSignature, setIncludeSignature] = useState(true);
   const [padding, setPadding] = useState(false);
+  const [showCaption, setShowCaption] = useState(false);
+  const [captionText, setCaptionText] = useState(DEFAULT_QR_CAPTION);
+  const [nameColor, setNameColor] = useState(DEFAULT_NAME_COLOR);
+  const [captionColor, setCaptionColor] = useState(DEFAULT_NAME_COLOR);
+  const [colorsAuto, setColorsAuto] = useState(true); // false once the user picks a colour
+  const [colorSampler, setColorSampler] = useState(null);
+
+  // Keep the caption colours matched to the graphic (around the first QR box) until the
+  // user picks their own.
+  useEffect(() => {
+    if (!showCaption || !colorsAuto || !colorSampler || !boxes.length) return;
+    const box = boxes.find((b) => b.linkUid) || boxes[0];
+    const suggested = colorSampler(box);
+    setNameColor(suggested.nameColor);
+    setCaptionColor(suggested.captionColor);
+  }, [showCaption, colorsAuto, colorSampler, boxes]);
   const [greetingPos, setGreetingPos] = useState(null); // null = above graphic; {x,y} = inside graphic
   const [busy, setBusy] = useState(false);
 
@@ -72,6 +91,7 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
         includeGreeting,
         greetingPos: includeGreeting ? greetingPos : null,
         padding,
+        qrCaption: showCaption ? { text: captionText.trim(), nameColor, captionColor } : null,
       });
       downloadBlob(blob, `${campaignName.trim().replace(/[^a-z0-9]+/gi, "_")}-qr-codes.zip`);
       toast.success("Done — QR codes downloaded as a zip.", { id: toastId });
@@ -85,6 +105,9 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
       setIncludeGreeting(true);
       setIncludeSignature(true);
       setPadding(false);
+      setShowCaption(false);
+      setCaptionText(DEFAULT_QR_CAPTION);
+      setColorsAuto(true);
       setGreetingPos(null);
       fileInput.current.value = "";
       graphicInput.current.value = "";
@@ -187,7 +210,63 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
               includeGreeting={includeGreeting}
               greetingPos={greetingPos}
               onGreetingPosChange={setGreetingPos}
+              qrCaption={showCaption ? { text: captionText, nameColor, captionColor } : null}
+              previewName={PREVIEW_NAME}
+              onColorSampler={(sampler) => setColorSampler(() => sampler)}
             />
+            <label className="field-label" style={{ flexDirection: "row", alignItems: "center", gap: "8px", fontWeight: "normal", marginTop: "8px" }}>
+              <input
+                type="checkbox"
+                checked={showCaption}
+                onChange={(e) => setShowCaption(e.target.checked)}
+                style={{ width: "auto", margin: 0 }}
+              />
+              Show name &amp; caption under the QR (e.g. "Rajesh Kumar ji" / "Scan to experience VPV")
+            </label>
+            {showCaption && (
+              <>
+                <label className="field-label">
+                  Caption under the name
+                  <input
+                    type="text"
+                    value={captionText}
+                    maxLength={80}
+                    onChange={(e) => setCaptionText(e.target.value)}
+                    placeholder={DEFAULT_QR_CAPTION}
+                  />
+                </label>
+                <div className="caption-color-row">
+                  <label>
+                    <input
+                      type="color"
+                      value={nameColor}
+                      onChange={(e) => {
+                        setColorsAuto(false);
+                        setNameColor(e.target.value);
+                      }}
+                    />
+                    Name colour
+                  </label>
+                  <label>
+                    <input
+                      type="color"
+                      value={captionColor}
+                      onChange={(e) => {
+                        setColorsAuto(false);
+                        setCaptionColor(e.target.value);
+                      }}
+                    />
+                    Caption colour
+                  </label>
+                  <button type="button" className="secondary" onClick={() => setColorsAuto(true)} disabled={colorsAuto}>
+                    {colorsAuto ? "Colours matched to graphic" : "Match colours to graphic"}
+                  </button>
+                </div>
+                <p className="muted small" style={{ margin: 0 }}>
+                  The QR, name and caption all fit inside the box you place — make the box a little taller than wide so there's room for the text. The preview above shows how it will print.
+                </p>
+              </>
+            )}
             <label className="field-label" style={{ flexDirection: "row", alignItems: "center", gap: "8px", fontWeight: "normal", marginTop: "8px" }}>
               <input 
                 type="checkbox" 
