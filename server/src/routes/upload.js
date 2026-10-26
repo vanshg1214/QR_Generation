@@ -8,7 +8,7 @@ import { withTransaction } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { failZip } from "../zipStream.js";
 import { createLetterBook, saveLetterBook, addPersonLetter } from "../letters.js";
-import { normalizeCaptionStyle } from "../qrCaptionLayout.js";
+import { normalizeTextStyles } from "../textStyles.js";
 
 export const uploadRoutes = Router();
 
@@ -115,21 +115,30 @@ uploadRoutes.post(
   const includeGreeting = req.body.includeGreeting === "false" ? false : true;
   const padding = req.body.padding === "true";
 
-  // Optional "{name} ji" + caption printed under each QR: { text, nameColor, captionColor }.
+  // Optional "{name} ji" + caption printed under each QR: { text }.
   let qrCaption = null;
   if (req.body.qrCaption) {
     try {
       const parsed = JSON.parse(req.body.qrCaption);
-      const isColor = (c) => typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c);
       const text = typeof parsed.text === "string" ? parsed.text.trim() : "";
-      const style = normalizeCaptionStyle(parsed);
-      if (text.length > MAX_QR_CAPTION_LENGTH || !isColor(parsed.nameColor) || !isColor(parsed.captionColor) || !style) {
-        return res.status(400).json({ error: "The QR caption settings are invalid" });
+      if (text.length > MAX_QR_CAPTION_LENGTH) {
+        return res.status(400).json({ error: "The QR caption is too long" });
       }
-      qrCaption = { text, nameColor: parsed.nameColor, captionColor: parsed.captionColor, ...style };
+      qrCaption = { text };
     } catch {
       return res.status(400).json({ error: "qrCaption must be valid JSON" });
     }
+  }
+
+  // Font, weight, size and colour for each text on the page (see textStyles.js).
+  let textStyles;
+  try {
+    textStyles = normalizeTextStyles(req.body.textStyles ? JSON.parse(req.body.textStyles) : null);
+  } catch {
+    textStyles = null;
+  }
+  if (!textStyles) {
+    return res.status(400).json({ error: "The text style settings are invalid" });
   }
 
   let greetingPos = null;
@@ -180,8 +189,8 @@ uploadRoutes.post(
 
   const created = await withTransaction(async (client) => {
     const { rows: campaignRows } = await client.query(
-      "INSERT INTO campaigns (name, signature_name, signature_title, typography, include_greeting, greeting_pos_json, letter_padding, qr_caption_json) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
-      [campaignName.trim(), signatureName, signatureTitle, typography, includeGreeting, greetingPos ? JSON.stringify(greetingPos) : null, padding, qrCaption ? JSON.stringify(qrCaption) : null]
+      "INSERT INTO campaigns (name, signature_name, signature_title, typography, include_greeting, greeting_pos_json, letter_padding, qr_caption_json, text_styles_json) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
+      [campaignName.trim(), signatureName, signatureTitle, typography, includeGreeting, greetingPos ? JSON.stringify(greetingPos) : null, padding, qrCaption ? JSON.stringify(qrCaption) : null, JSON.stringify(textStyles)]
     );
     const campaignId = campaignRows[0].id;
 
@@ -257,7 +266,7 @@ uploadRoutes.post(
     // The campaign graphic is embedded ONCE into a shared "book" and reused for
     // every person's page -- re-embedding a multi-megabyte image per person is
     // what made this slow (a 28-person campaign took 44s before this).
-    const book = graphicFile ? await createLetterBook(graphicFile.buffer, graphicFile.mimetype, typography, { qrCaption }) : null;
+    const book = graphicFile ? await createLetterBook(graphicFile.buffer, graphicFile.mimetype) : null;
 
     const personFolders = [];
     const qrFiles = [];
@@ -284,6 +293,7 @@ uploadRoutes.post(
           greetingPos,
           padding,
           qrCaption,
+          textStyles,
           publicBaseUrl,
         });
       }

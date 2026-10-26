@@ -2,19 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import { api, downloadBlob } from "../api.js";
 import LetterGraphicCalibrator from "./LetterGraphicCalibrator.jsx";
-import {
-  DEFAULT_QR_CAPTION,
-  DEFAULT_CAPTION_STYLE,
-  MIN_TEXT_SCALE,
-  MAX_TEXT_SCALE,
-} from "../../../server/src/qrCaptionLayout.js";
+import TextStyleEditor from "./TextStyleEditor.jsx";
+import { DEFAULT_QR_CAPTION } from "../../../server/src/qrCaptionLayout.js";
+import { defaultTextStyles, isScaledText } from "../../../server/src/textStyles.js";
 
 const MAX_LINKS = 10;
 const DEFAULT_SIGNATURE_NAME = "Nitin Gupta";
 const DEFAULT_SIGNATURE_TITLE = "Export Marketing Strategist";
 const PREVIEW_NAME = "Rajesh Kumar";
-const DEFAULT_NAME_COLOR = "#1a1a1a";
-const WEIGHT_LABELS = { regular: "Regular", medium: "Medium", semibold: "Semi-bold", bold: "Bold" };
+const DEFAULT_TEXT_COLOR = "#1a1a1a";
 
 // Links are pre-named L-1, L-2, ... so every link (and every QR box) has a usable label
 // from the start; the user can rename them.
@@ -31,33 +27,66 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
   const [boxes, setBoxes] = useState([]);
   const [signatureName, setSignatureName] = useState(DEFAULT_SIGNATURE_NAME);
   const [signatureTitle, setSignatureTitle] = useState(DEFAULT_SIGNATURE_TITLE);
-  const [typography, setTypography] = useState("sans-serif");
   const [includeGreeting, setIncludeGreeting] = useState(true);
   const [includeSignature, setIncludeSignature] = useState(true);
   const [padding, setPadding] = useState(false);
   const [showCaption, setShowCaption] = useState(false);
   const [captionText, setCaptionText] = useState(DEFAULT_QR_CAPTION);
-  const [captionStyle, setCaptionStyle] = useState(DEFAULT_CAPTION_STYLE); // weight + size per line
-  const [nameColor, setNameColor] = useState(DEFAULT_NAME_COLOR);
-  const [captionColor, setCaptionColor] = useState(DEFAULT_NAME_COLOR);
-  const [colorsAuto, setColorsAuto] = useState(true); // false once the user picks a colour
+  // Font, weight, size and colour of every text on the page (see server/src/textStyles.js).
+  const [textStyles, setTextStyles] = useState(() => defaultTextStyles());
+  const [selectedText, setSelectedText] = useState("greeting");
+  // Colours for the text under the QR, matched to the graphic around the first QR box.
+  const [autoColors, setAutoColors] = useState({ qrName: DEFAULT_TEXT_COLOR, qrCaption: DEFAULT_TEXT_COLOR });
+  const [colorsAuto, setColorsAuto] = useState(true); // false once the user picks their own
   const [colorSampler, setColorSampler] = useState(null);
 
-  // Keep the caption colours matched to the graphic (around the first QR box) until the
-  // user picks their own.
   useEffect(() => {
-    if (!showCaption || !colorsAuto || !colorSampler || !boxes.length) return;
-    const box = boxes.find((b) => b.linkUid) || boxes[0];
-    const suggested = colorSampler(box);
-    setNameColor(suggested.nameColor);
-    setCaptionColor(suggested.captionColor);
-  }, [showCaption, colorsAuto, colorSampler, boxes]);
+    if (!colorSampler || !boxes.length) return;
+    const suggested = colorSampler(boxes[0]);
+    setAutoColors((prev) =>
+      prev.qrName === suggested.nameColor && prev.qrCaption === suggested.captionColor
+        ? prev
+        : { qrName: suggested.nameColor, qrCaption: suggested.captionColor }
+    );
+  }, [colorSampler, boxes]);
+
+  useEffect(() => {
+    if (!colorsAuto) return;
+    setTextStyles((prev) =>
+      prev.qrName.color === autoColors.qrName && prev.qrCaption.color === autoColors.qrCaption
+        ? prev
+        : {
+            ...prev,
+            qrName: { ...prev.qrName, color: autoColors.qrName },
+            qrCaption: { ...prev.qrCaption, color: autoColors.qrCaption },
+          }
+    );
+  }, [colorsAuto, autoColors]);
+
+  // What "Reset" goes back to: the defaults, with the graphic-matched colours under the QR.
+  const baseStyles = defaultTextStyles();
+  const resetStyles = {
+    ...baseStyles,
+    qrName: { ...baseStyles.qrName, color: autoColors.qrName },
+    qrCaption: { ...baseStyles.qrCaption, color: autoColors.qrCaption },
+  };
+
+  // Only texts that will actually print can be edited.
+  const activeTexts = [
+    includeGreeting && "greeting",
+    showCaption && "qrName",
+    showCaption && captionText.trim() && "qrCaption",
+    includeSignature && signatureName.trim() && "footerName",
+    includeSignature && signatureTitle.trim() && "footerTitle",
+  ].filter(Boolean);
+  const editingText = activeTexts.includes(selectedText) ? selectedText : activeTexts[0];
+
+  function updateTextStyle(key, patch) {
+    setTextStyles((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
+    if (isScaledText(key) && "color" in patch) setColorsAuto(patch.color === autoColors[key]);
+  }
   const [greetingPos, setGreetingPos] = useState(null); // null = above graphic; {x,y} = inside graphic
   const [busy, setBusy] = useState(false);
-
-  function updateCaptionStyle(key, value) {
-    setCaptionStyle((prev) => ({ ...prev, [key]: value }));
-  }
 
   function updateLink(index, field, value) {
     setLinks((prev) => prev.map((l, i) => (i === index ? { ...l, [field]: value } : l)));
@@ -100,11 +129,11 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
         // No signature = no footer; the server only draws one when a name/title is given.
         signatureName: includeSignature ? signatureName.trim() : "",
         signatureTitle: includeSignature ? signatureTitle.trim() : "",
-        typography,
         includeGreeting,
         greetingPos: includeGreeting ? greetingPos : null,
         padding,
-        qrCaption: showCaption ? { text: captionText.trim(), nameColor, captionColor, ...captionStyle } : null,
+        qrCaption: showCaption ? { text: captionText.trim() } : null,
+        textStyles,
       });
       downloadBlob(blob, `${campaignName.trim().replace(/[^a-z0-9]+/gi, "_")}-qr-codes.zip`);
       toast.success("Done — QR codes downloaded as a zip.", { id: toastId });
@@ -114,13 +143,13 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
       setBoxes([]);
       setSignatureName(DEFAULT_SIGNATURE_NAME);
       setSignatureTitle(DEFAULT_SIGNATURE_TITLE);
-      setTypography("sans-serif");
       setIncludeGreeting(true);
       setIncludeSignature(true);
       setPadding(false);
       setShowCaption(false);
       setCaptionText(DEFAULT_QR_CAPTION);
-      setCaptionStyle(DEFAULT_CAPTION_STYLE);
+      setTextStyles(defaultTextStyles());
+      setSelectedText("greeting");
       setColorsAuto(true);
       setGreetingPos(null);
       fileInput.current.value = "";
@@ -152,9 +181,9 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
         (the name column is found automatically, e.g. "Name" or "Contact Name"). Optionally upload
         a letter graphic (PNG/JPEG) — if provided, the zip also gets one combined "All Letters.pdf"
         for printing, one page per person with their own QR code. The greeting and signature
-        footer are optional, and pages are borderless unless you tick the white-margin option. If the
-        graphic has a blank placeholder box (e.g. "scan this"), calibrate it below so each
-        person's real QR code gets stamped into it.
+        footer are optional, and pages are borderless unless you tick the white-margin option. The
+        page preview shows exactly how each page will print: place the QR boxes on it, and click any
+        text to change its font, weight, size and colour.
       </p>
       <form className="stacked-form" onSubmit={handleSubmit}>
         <input
@@ -216,29 +245,27 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
 
         {graphicFile && (
           <>
-            <LetterGraphicCalibrator
-              graphicFile={graphicFile}
-              links={links}
-              boxes={boxes}
-              onBoxesChange={setBoxes}
-              includeGreeting={includeGreeting}
-              greetingPos={greetingPos}
-              onGreetingPosChange={setGreetingPos}
-              qrCaption={showCaption ? { text: captionText, nameColor, captionColor, ...captionStyle } : null}
-              previewName={PREVIEW_NAME}
-              onColorSampler={(sampler) => setColorSampler(() => sampler)}
-            />
-            <label className="field-label" style={{ flexDirection: "row", alignItems: "center", gap: "8px", fontWeight: "normal", marginTop: "8px" }}>
-              <input
-                type="checkbox"
-                checked={showCaption}
-                onChange={(e) => setShowCaption(e.target.checked)}
-                style={{ width: "auto", margin: 0 }}
-              />
-              Show name &amp; caption under the QR (e.g. "Rajesh Kumar ji" / "Scan to experience VPV")
-            </label>
-            {showCaption && (
-              <>
+            <div className="page-options">
+              <strong>What goes on each page</strong>
+              <label className="field-label" style={{ flexDirection: "row", alignItems: "center", gap: "8px", fontWeight: "normal", marginTop: "8px" }}>
+                <input
+                  type="checkbox"
+                  checked={includeGreeting}
+                  onChange={(e) => setIncludeGreeting(e.target.checked)}
+                  style={{ width: "auto", margin: 0 }}
+                />
+                Personalized greeting ("Dear [Name] ji,")
+              </label>
+              <label className="field-label" style={{ flexDirection: "row", alignItems: "center", gap: "8px", fontWeight: "normal", marginTop: "8px" }}>
+                <input
+                  type="checkbox"
+                  checked={showCaption}
+                  onChange={(e) => setShowCaption(e.target.checked)}
+                  style={{ width: "auto", margin: 0 }}
+                />
+                Name &amp; caption under the QR ("[Name] ji" / "Scan to experience VPV")
+              </label>
+              {showCaption && (
                 <label className="field-label">
                   Caption under the name
                   <input
@@ -249,131 +276,78 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
                     placeholder={DEFAULT_QR_CAPTION}
                   />
                 </label>
-                <div className="caption-style-grid">
-                  {[
-                    { key: "name", label: "Name", color: nameColor, setColor: setNameColor },
-                    { key: "caption", label: "Caption", color: captionColor, setColor: setCaptionColor },
-                  ].map((row) => {
-                    const weightKey = `${row.key}Weight`;
-                    const scaleKey = `${row.key}Scale`;
-                    return (
-                      <div className="caption-style-row" key={row.key}>
-                        <span className="caption-style-label">{row.label}</span>
-                        <label>
-                          Weight
-                          <select
-                            value={captionStyle[weightKey]}
-                            onChange={(e) => updateCaptionStyle(weightKey, e.target.value)}
-                          >
-                            {Object.entries(WEIGHT_LABELS).map(([value, text]) => (
-                              <option key={value} value={value}>
-                                {text}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label>
-                          Size
-                          <input
-                            type="range"
-                            min={MIN_TEXT_SCALE * 100}
-                            max={MAX_TEXT_SCALE * 100}
-                            step={5}
-                            value={Math.round(captionStyle[scaleKey] * 100)}
-                            onChange={(e) => updateCaptionStyle(scaleKey, Number(e.target.value) / 100)}
-                          />
-                          <span className="caption-size-value">{Math.round(captionStyle[scaleKey] * 100)}%</span>
-                        </label>
-                        <label>
-                          Colour
-                          <input
-                            type="color"
-                            value={row.color}
-                            onChange={(e) => {
-                              setColorsAuto(false);
-                              row.setColor(e.target.value);
-                            }}
-                          />
-                        </label>
-                      </div>
-                    );
-                  })}
-                  <div className="caption-style-actions">
-                    <button type="button" className="secondary" onClick={() => setColorsAuto(true)} disabled={colorsAuto}>
-                      {colorsAuto ? "Colours matched to graphic" : "Match colours to graphic"}
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => setCaptionStyle(DEFAULT_CAPTION_STYLE)}
-                      disabled={JSON.stringify(captionStyle) === JSON.stringify(DEFAULT_CAPTION_STYLE)}
-                    >
-                      Reset size &amp; weight
-                    </button>
-                  </div>
+              )}
+              <label className="field-label" style={{ flexDirection: "row", alignItems: "center", gap: "8px", fontWeight: "normal", marginTop: "8px" }}>
+                <input
+                  type="checkbox"
+                  checked={includeSignature}
+                  onChange={(e) => setIncludeSignature(e.target.checked)}
+                  style={{ width: "auto", margin: 0 }}
+                />
+                Signature footer (name &amp; title)
+              </label>
+              {includeSignature && (
+                <div className="signature-fields">
+                  <label className="field-label">
+                    Signature name
+                    <input
+                      type="text"
+                      value={signatureName}
+                      onChange={(e) => setSignatureName(e.target.value)}
+                      placeholder={DEFAULT_SIGNATURE_NAME}
+                    />
+                  </label>
+                  <label className="field-label">
+                    Signature title
+                    <input
+                      type="text"
+                      value={signatureTitle}
+                      onChange={(e) => setSignatureTitle(e.target.value)}
+                      placeholder={DEFAULT_SIGNATURE_TITLE}
+                    />
+                  </label>
                 </div>
-                <p className="muted small" style={{ margin: 0 }}>
-                  The QR, name and caption all fit inside the box you place — make the box a little taller than wide so there's room for the text. The preview above shows how it will print.
-                </p>
-              </>
-            )}
-            <label className="field-label" style={{ flexDirection: "row", alignItems: "center", gap: "8px", fontWeight: "normal", marginTop: "8px" }}>
-              <input 
-                type="checkbox" 
-                checked={includeSignature}
-                onChange={(e) => setIncludeSignature(e.target.checked)}
-                style={{ width: "auto", margin: 0 }}
+              )}
+              <label className="field-label" style={{ flexDirection: "row", alignItems: "center", gap: "8px", fontWeight: "normal", marginTop: "8px" }}>
+                <input
+                  type="checkbox"
+                  checked={padding}
+                  onChange={(e) => setPadding(e.target.checked)}
+                  style={{ width: "auto", margin: 0 }}
+                />
+                White margin around the graphic (off = graphic fills the page edge to edge)
+              </label>
+            </div>
+
+            <LetterGraphicCalibrator
+              graphicFile={graphicFile}
+              links={links}
+              boxes={boxes}
+              onBoxesChange={setBoxes}
+              includeGreeting={includeGreeting}
+              greetingPos={greetingPos}
+              onGreetingPosChange={setGreetingPos}
+              padding={padding}
+              signatureName={includeSignature ? signatureName.trim() : ""}
+              signatureTitle={includeSignature ? signatureTitle.trim() : ""}
+              qrCaption={showCaption ? { text: captionText } : null}
+              textStyles={textStyles}
+              selectedText={editingText}
+              onSelectText={setSelectedText}
+              previewName={PREVIEW_NAME}
+              onColorSampler={(sampler) => setColorSampler(() => sampler)}
+            >
+              <TextStyleEditor
+                activeKeys={activeTexts}
+                selected={editingText}
+                onSelect={setSelectedText}
+                styles={textStyles}
+                defaults={resetStyles}
+                onChange={updateTextStyle}
+                colorsAuto={colorsAuto}
+                onMatchColors={() => setColorsAuto(true)}
               />
-              Include Signature Footer (name & title)
-            </label>
-            {includeSignature && (
-              <>
-                <label className="field-label">
-                  Signature name
-                  <input
-                    type="text"
-                    value={signatureName}
-                    onChange={(e) => setSignatureName(e.target.value)}
-                    placeholder="Nitin Gupta"
-                  />
-                </label>
-                <label className="field-label">
-                  Signature title
-                  <input
-                    type="text"
-                    value={signatureTitle}
-                    onChange={(e) => setSignatureTitle(e.target.value)}
-                    placeholder="Export Marketing Strategist"
-                  />
-                </label>
-              </>
-            )}
-            <label className="field-label">
-              Letter Font Style
-              <select value={typography} onChange={(e) => setTypography(e.target.value)}>
-                <option value="sans-serif">Modern & Clean (Helvetica)</option>
-                <option value="serif">Classic & Professional (Times Roman)</option>
-                <option value="monospace">Typewriter Style (Courier)</option>
-              </select>
-            </label>
-            <label className="field-label" style={{ flexDirection: "row", alignItems: "center", gap: "8px", fontWeight: "normal", marginTop: "8px" }}>
-              <input 
-                type="checkbox" 
-                checked={includeGreeting}
-                onChange={(e) => setIncludeGreeting(e.target.checked)}
-                style={{ width: "auto", margin: 0 }}
-              />
-              Include Personalized Greeting (Dear [Name] ji,)
-            </label>
-            <label className="field-label" style={{ flexDirection: "row", alignItems: "center", gap: "8px", fontWeight: "normal", marginTop: "8px" }}>
-              <input
-                type="checkbox"
-                checked={padding}
-                onChange={(e) => setPadding(e.target.checked)}
-                style={{ width: "auto", margin: 0 }}
-              />
-              Add white margin around the graphic (off = graphic fills the page edge to edge)
-            </label>
+            </LetterGraphicCalibrator>
           </>
         )}
 

@@ -107,6 +107,7 @@ export async function initSchema() {
   await pool.query("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS greeting_pos_json TEXT");
   await pool.query("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS letter_padding BOOLEAN DEFAULT false");
   await pool.query("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS qr_caption_json TEXT");
+  await pool.query("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS text_styles_json TEXT");
 
   await migrateSingleLinkSchema();
 

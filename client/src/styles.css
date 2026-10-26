@@ -577,7 +577,7 @@ tbody tr:hover {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-width: 560px;
+  max-width: 720px;
   padding: 14px;
   background: var(--bg);
   border: 1px dashed var(--border);
@@ -603,22 +603,163 @@ tbody tr:hover {
   font-size: 0.85rem;
 }
 
-.qr-calibrator-canvas {
+/* The page preview: a white page at the PDF's proportions, with the graphic placed on it */
+.letter-page-frame {
+  width: 100%;
+  margin: 28px auto 0; /* room for the controls above a QR box at the top */
+}
+
+.letter-page {
   position: relative;
   width: 100%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18), 0 6px 20px rgba(0, 0, 0, 0.08);
+  touch-action: none;
+  container-type: inline-size; /* font sizes in cqw scale with the page */
+}
+
+.qr-calibrator-canvas {
+  position: absolute;
   line-height: 0;
-  border-radius: 6px;
-  overflow: hidden;
-  border: 1px solid var(--border);
   touch-action: none;
 }
 
 .qr-calibrator-canvas img {
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
   user-select: none;
   pointer-events: none;
+}
+
+/* A printed text line in the preview; click to style it */
+.page-text {
+  position: absolute;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.page-text:hover {
+  outline: 1px dashed var(--primary);
+}
+
+.page-text.is-selected {
+  outline: 1.5px solid var(--primary);
+}
+
+.page-text.is-draggable {
+  cursor: move;
+  touch-action: none;
+}
+
+.greeting-pos-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  font-size: 0.85rem;
+}
+
+.greeting-pos-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-weight: normal;
+}
+
+.page-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.signature-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+/* Text style editor (above the page preview) */
+.text-style-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+.text-style-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.text-style-tab {
+  padding: 5px 10px;
+  font-size: 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+}
+
+.text-style-tab.is-active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.text-style-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.text-style-controls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: normal;
+}
+
+.text-style-controls select {
+  width: auto;
+  padding: 4px 6px;
+}
+
+.text-style-controls input[type="range"] {
+  width: 110px;
+  padding: 0;
+}
+
+.text-size-value {
+  min-width: 42px;
+  font-variant-numeric: tabular-nums;
+}
+
+.text-style-controls input[type="color"] {
+  width: 36px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.text-style-controls button {
+  padding: 5px 10px;
+  font-size: 0.8rem;
 }
 
 .qr-box {
@@ -675,93 +816,6 @@ tbody tr:hover {
   background: var(--accent);
   border: 2px solid #fff;
   cursor: nwse-resize;
-}
-
-/* Preview of the "{name} ji" + caption printed under the QR */
-.qr-caption-line {
-  position: absolute;
-  font-family: "Poppins", sans-serif;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-.caption-color-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  font-size: 0.85rem;
-}
-
-.caption-color-row label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: normal;
-}
-
-.caption-color-row input[type="color"] {
-  width: 36px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.caption-style-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  font-size: 0.85rem;
-}
-
-.caption-style-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 16px;
-}
-
-.caption-style-row label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: normal;
-}
-
-.caption-style-label {
-  min-width: 60px;
-  font-weight: 600;
-}
-
-.caption-style-row select {
-  width: auto;
-}
-
-.caption-style-row input[type="range"] {
-  width: 110px;
-  padding: 0;
-}
-
-.caption-size-value {
-  min-width: 38px;
-  font-variant-numeric: tabular-nums;
-}
-
-.caption-style-row input[type="color"] {
-  width: 36px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.caption-style-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 
 /* Draggable greeting overlay in the calibrator */

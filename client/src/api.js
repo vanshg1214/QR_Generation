@@ -43,7 +43,7 @@ export const api = {
   downloadQrZip: (id) =>
     request(`/campaigns/${id}/download-qr.zip`).then((r) => r.blob()),
 
-  async createCampaign({ campaignName, links, file, graphic, boxes, signatureName, signatureTitle, typography, includeGreeting, greetingPos, padding, qrCaption }) {
+  async createCampaign({ campaignName, links, file, graphic, boxes, signatureName, signatureTitle, includeGreeting, greetingPos, padding, qrCaption, textStyles }) {
     const formData = new FormData();
     formData.append("campaignName", campaignName);
     formData.append("links", JSON.stringify(links));
@@ -52,7 +52,7 @@ export const api = {
     if (boxes) formData.append("boxes", JSON.stringify(boxes));
     if (signatureName) formData.append("signatureName", signatureName);
     if (signatureTitle) formData.append("signatureTitle", signatureTitle);
-    if (typography) formData.append("typography", typography);
+    if (textStyles) formData.append("textStyles", JSON.stringify(textStyles));
     if (includeGreeting !== undefined) formData.append("includeGreeting", includeGreeting.toString());
     if (greetingPos) formData.append("greetingPos", JSON.stringify(greetingPos));
     formData.append("padding", padding ? "true" : "false");
