@@ -3,7 +3,7 @@ import { toast } from "react-hot-toast";
 import { api, downloadBlob } from "../api.js";
 import LetterGraphicCalibrator from "./LetterGraphicCalibrator.jsx";
 import TextStyleEditor from "./TextStyleEditor.jsx";
-import { DEFAULT_QR_CAPTION } from "../../../server/src/qrCaptionLayout.js";
+import { DEFAULT_QR_CAPTION, MAX_CAPTION_LINES } from "../../../server/src/qrCaptionLayout.js";
 import { defaultTextStyles, isScaledText } from "../../../server/src/textStyles.js";
 
 const MAX_LINKS = 10;
@@ -132,7 +132,7 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
         includeGreeting,
         greetingPos: includeGreeting ? greetingPos : null,
         padding,
-        qrCaption: showCaption ? { text: captionText.trim() } : null,
+        qrCaption: showCaption ? { text: captionText } : null,
         textStyles,
       });
       downloadBlob(blob, `${campaignName.trim().replace(/[^a-z0-9]+/gi, "_")}-qr-codes.zip`);
@@ -267,13 +267,17 @@ export default function CreateCampaignPanel({ onCreated, onCancel }) {
               </label>
               {showCaption && (
                 <label className="field-label">
-                  Caption under the name
-                  <input
-                    type="text"
+                  Caption under the name (press Enter to start a new line, up to {MAX_CAPTION_LINES} lines)
+                  <textarea
+                    className="caption-input"
+                    rows={Math.min(MAX_CAPTION_LINES, Math.max(2, captionText.split("\n").length))}
                     value={captionText}
                     maxLength={80}
-                    onChange={(e) => setCaptionText(e.target.value)}
-                    placeholder={DEFAULT_QR_CAPTION}
+                    onChange={(e) =>
+                      // Never let more than the allowed number of lines be typed.
+                      setCaptionText(e.target.value.split("\n").slice(0, MAX_CAPTION_LINES).join("\n"))
+                    }
+                    placeholder={"Scan\nto experience VPV"}
                   />
                 </label>
               )}

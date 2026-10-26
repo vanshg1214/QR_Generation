@@ -9,6 +9,7 @@ import { requireAuth } from "../auth.js";
 import { failZip } from "../zipStream.js";
 import { createLetterBook, saveLetterBook, addPersonLetter } from "../letters.js";
 import { normalizeTextStyles } from "../textStyles.js";
+import { captionLines, MAX_CAPTION_LINES } from "../qrCaptionLayout.js";
 
 export const uploadRoutes = Router();
 
@@ -120,8 +121,10 @@ uploadRoutes.post(
   if (req.body.qrCaption) {
     try {
       const parsed = JSON.parse(req.body.qrCaption);
-      const text = typeof parsed.text === "string" ? parsed.text.trim() : "";
-      if (text.length > MAX_QR_CAPTION_LENGTH) {
+      // Lines are separated by newlines (Enter in the caption box).
+      const rawText = typeof parsed.text === "string" ? parsed.text : "";
+      const text = captionLines(rawText).join("\n");
+      if (text.length > MAX_QR_CAPTION_LENGTH || rawText.split(/\r?\n/).filter((l) => l.trim()).length > MAX_CAPTION_LINES) {
         return res.status(400).json({ error: "The QR caption is too long" });
       }
       qrCaption = { text };

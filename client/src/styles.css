@@ -1019,3 +1019,9 @@ tbody tr:hover {
   border-radius: 12px;
   font-size: 0.8rem;
 }
+
+.caption-input {
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.4;
+}

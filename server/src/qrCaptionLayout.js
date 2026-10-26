@@ -13,6 +13,17 @@
 import { LINE_HEIGHT } from "./textStyles.js";
 
 export const DEFAULT_QR_CAPTION = "Scan to experience VPV";
+export const MAX_CAPTION_LINES = 3;
+
+// The caption can span several lines (the user presses Enter between them). Returns the
+// non-empty, trimmed lines, at most MAX_CAPTION_LINES.
+export function captionLines(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, MAX_CAPTION_LINES);
+}
 
 // Shrinks size until text fits maxWidth; returns the size (never below minSize).
 function fitSize(width, text, startSize, minSize, maxWidth) {
@@ -39,6 +50,7 @@ function splitInTwo(width, text, size) {
 }
 
 function layoutAtScale({ boxW, boxH, nameText, caption, measure, nameStyle, captionStyle, scale }) {
+  // caption: array of lines (may be empty)
   const nameWidth = (t, s) => measure(t, nameStyle.font, nameStyle.weight, s);
   const captionWidth = (t, s) => measure(t, captionStyle.font, captionStyle.weight, s);
   const pad = boxW * 0.04;
@@ -56,12 +68,16 @@ function layoutAtScale({ boxW, boxH, nameText, caption, measure, nameStyle, capt
   }
   // Sized from the base, not the (possibly shrunk) name, so it stays consistent page to page.
   const baseCaption = auto * 0.8 * captionStyle.size;
-  const captionSize = caption ? fitSize(captionWidth, caption, baseCaption, baseCaption * 0.5, innerW) : 0;
+  // One size for every caption line, small enough for the widest one to fit.
+  const captionSize = caption.length
+    ? Math.min(...caption.map((l) => fitSize(captionWidth, l, baseCaption, baseCaption * 0.5, innerW)))
+    : 0;
 
   const gapBelowQr = auto * 0.35;
-  const gapBeforeCaption = caption ? auto * 0.1 : 0;
+  const gapBeforeCaption = caption.length ? auto * 0.1 : 0;
   const textHeight =
-    nameLines.length * nameSize * LINE_HEIGHT + (caption ? gapBeforeCaption + captionSize * LINE_HEIGHT : 0);
+    nameLines.length * nameSize * LINE_HEIGHT +
+    (caption.length ? gapBeforeCaption + caption.length * captionSize * LINE_HEIGHT : 0);
   const qrSize = Math.max(0, Math.min(innerW, boxH - pad * 2 - gapBelowQr - textHeight));
 
   const totalHeight = qrSize + gapBelowQr + textHeight;
@@ -74,9 +90,10 @@ function layoutAtScale({ boxW, boxH, nameText, caption, measure, nameStyle, capt
     y += nameSize * LINE_HEIGHT;
     return line;
   });
-  if (caption) {
-    y += gapBeforeCaption;
-    lines.push({ text: caption, role: "qrCaption", size: captionSize, top: y, width: captionWidth(caption, captionSize) });
+  if (caption.length) y += gapBeforeCaption;
+  for (const text of caption) {
+    lines.push({ text, role: "qrCaption", size: captionSize, top: y, width: captionWidth(text, captionSize) });
+    y += captionSize * LINE_HEIGHT;
   }
   for (const line of lines) line.x = (boxW - line.width) / 2;
   return { qr, lines };
@@ -84,7 +101,7 @@ function layoutAtScale({ boxW, boxH, nameText, caption, measure, nameStyle, capt
 
 export function layoutQrCaption({ boxW, boxH, name, caption, measure, nameStyle, captionStyle }) {
   const nameText = `${name} ji`;
-  const captionText = (caption || "").trim();
+  const captionText = captionLines(caption);
   // In a short box, the text would squeeze the QR too small to scan reliably; scale the
   // text down until the QR keeps a healthy share of the box.
   const target = 0.55 * Math.min(boxW * 0.92, boxH * 0.92);
