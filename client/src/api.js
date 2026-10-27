@@ -50,20 +50,28 @@ export const api = {
     return request("/sheet-check", { method: "POST", body: formData }).then((r) => r.json());
   },
 
-  async createCampaign({ campaignName, links, file, graphic, boxes, signatureName, signatureTitle, includeGreeting, greetingPos, padding, qrCaption, textStyles }) {
-    const formData = new FormData();
+  // One real letter page (PDF) for `personName`, made by the same code as "All Letters.pdf",
+  // plus the server's timings, used to estimate how long the whole campaign will take.
+  async previewLetter({ personName, ...settings }) {
+    const formData = letterForm(settings);
+    formData.append("personName", personName);
+    const started = performance.now();
+    const res = await request("/preview-letter", { method: "POST", body: formData });
+    const blob = await res.blob();
+    const ms = (name) => Number(res.headers.get(name)) || 0;
+    return {
+      blob,
+      clientMs: performance.now() - started,
+      setupMs: ms("X-Setup-Ms"),
+      firstPageMs: ms("X-First-Page-Ms"),
+      perPageMs: ms("X-Per-Page-Ms"),
+    };
+  },
+
+  async createCampaign({ campaignName, file, ...settings }) {
+    const formData = letterForm(settings);
     formData.append("campaignName", campaignName);
-    formData.append("links", JSON.stringify(links));
     formData.append("file", file);
-    if (graphic) formData.append("graphic", graphic);
-    if (boxes) formData.append("boxes", JSON.stringify(boxes));
-    if (signatureName) formData.append("signatureName", signatureName);
-    if (signatureTitle) formData.append("signatureTitle", signatureTitle);
-    if (textStyles) formData.append("textStyles", JSON.stringify(textStyles));
-    if (includeGreeting !== undefined) formData.append("includeGreeting", includeGreeting.toString());
-    if (greetingPos) formData.append("greetingPos", JSON.stringify(greetingPos));
-    formData.append("padding", padding ? "true" : "false");
-    if (qrCaption) formData.append("qrCaption", JSON.stringify(qrCaption));
     const res = await fetch(`${API_BASE}/api/upload`, {
       method: "POST",
       credentials: "include",
@@ -82,6 +90,22 @@ export const api = {
     return zipResult(res);
   },
 };
+
+// The letter settings, as the server's /upload and /preview-letter read them.
+function letterForm({ links, graphic, boxes, signatureName, signatureTitle, includeGreeting, greetingPos, padding, qrCaption, textStyles }) {
+  const formData = new FormData();
+  formData.append("links", JSON.stringify(links));
+  if (graphic) formData.append("graphic", graphic);
+  if (boxes) formData.append("boxes", JSON.stringify(boxes));
+  if (signatureName) formData.append("signatureName", signatureName);
+  if (signatureTitle) formData.append("signatureTitle", signatureTitle);
+  if (textStyles) formData.append("textStyles", JSON.stringify(textStyles));
+  if (includeGreeting !== undefined) formData.append("includeGreeting", includeGreeting.toString());
+  if (greetingPos) formData.append("greetingPos", JSON.stringify(greetingPos));
+  formData.append("padding", padding ? "true" : "false");
+  if (qrCaption) formData.append("qrCaption", JSON.stringify(qrCaption));
+  return formData;
+}
 
 async function zipResult(res) {
   const count = (name) => {

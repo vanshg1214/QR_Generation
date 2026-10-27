@@ -70,60 +70,45 @@ uploadRoutes.post("/sheet-check", requireAuth, upload.single("file"), (req, res)
   res.json(sheetReport(analysis));
 });
 
-uploadRoutes.post(
-  "/upload",
-  requireAuth,
-  upload.fields([
-    { name: "file", maxCount: 1 },
-    { name: "graphic", maxCount: 1 },
-  ]),
-  async (req, res) => {
-  const excelFile = req.files?.file?.[0];
-  if (!excelFile) {
-    return res.status(400).json({ error: "No file uploaded" });
-  }
-  req.file = excelFile; // downstream code below reads req.file
-
+// Reads and checks the letter settings sent with a campaign (graphic, links, QR boxes, texts and
+// styles). Shared by /upload and /preview-letter so the proof page is made exactly like the
+// real letters. Returns { error } or the settings.
+function parseLetterRequest(req) {
   const graphicFile = req.files?.graphic?.[0];
   if (graphicFile) {
     if (!ALLOWED_GRAPHIC_MIMES.has(graphicFile.mimetype)) {
-      return res.status(400).json({ error: "The letter graphic must be a PNG or JPEG image" });
+      return { error: "The letter graphic must be a PNG or JPEG image" };
     }
     if (graphicFile.size > GRAPHIC_MAX_BYTES) {
-      return res.status(400).json({ error: "The letter graphic must be 20MB or smaller" });
+      return { error: "The letter graphic must be 20MB or smaller" };
     }
-  }
-
-  const { campaignName } = req.body || {};
-  if (!campaignName || !campaignName.trim()) {
-    return res.status(400).json({ error: "campaignName is required" });
   }
 
   let links;
   try {
     links = JSON.parse(req.body.links || "[]");
   } catch {
-    return res.status(400).json({ error: "links must be valid JSON" });
+    return { error: "links must be valid JSON" };
   }
   if (!Array.isArray(links) || links.length === 0) {
-    return res.status(400).json({ error: "At least one link is required" });
+    return { error: "At least one link is required" };
   }
   if (links.length > MAX_LINKS) {
-    return res.status(400).json({ error: `At most ${MAX_LINKS} links are allowed` });
+    return { error: `At most ${MAX_LINKS} links are allowed` };
   }
   for (const link of links) {
     if (!link.label || !link.label.trim()) {
-      return res.status(400).json({ error: "Every link needs a label" });
+      return { error: "Every link needs a label" };
     }
     if (!link.destinationUrl || !/^https?:\/\//i.test(link.destinationUrl)) {
-      return res.status(400).json({ error: `"${link.label}" needs a valid http(s) destination URL` });
+      return { error: `"${link.label}" needs a valid http(s) destination URL` };
     }
   }
 
   const signatureName = (req.body.signatureName || "").trim();
   const signatureTitle = (req.body.signatureTitle || "").trim();
   if (signatureName.length > MAX_SIGNATURE_FIELD_LENGTH || signatureTitle.length > MAX_SIGNATURE_FIELD_LENGTH) {
-    return res.status(400).json({ error: "Signature name/title must be 200 characters or fewer" });
+    return { error: "Signature name/title must be 200 characters or fewer" };
   }
 
   const typography = ["sans-serif", "serif", "monospace"].includes(req.body.typography) ? req.body.typography : "sans-serif";
@@ -139,11 +124,11 @@ uploadRoutes.post(
       const rawText = typeof parsed.text === "string" ? parsed.text : "";
       const text = captionLines(rawText).join("\n");
       if (text.length > MAX_QR_CAPTION_LENGTH || rawText.split(/\r?\n/).filter((l) => l.trim()).length > MAX_CAPTION_LINES) {
-        return res.status(400).json({ error: "The QR caption is too long" });
+        return { error: "The QR caption is too long" };
       }
       qrCaption = { text };
     } catch {
-      return res.status(400).json({ error: "qrCaption must be valid JSON" });
+      return { error: "qrCaption must be valid JSON" };
     }
   }
 
@@ -155,7 +140,7 @@ uploadRoutes.post(
     textStyles = null;
   }
   if (!textStyles) {
-    return res.status(400).json({ error: "The text style settings are invalid" });
+    return { error: "The text style settings are invalid" };
   }
 
   let greetingPos = null;
@@ -167,10 +152,10 @@ uploadRoutes.post(
   try {
     boxes = JSON.parse(req.body.boxes || "[]");
   } catch {
-    return res.status(400).json({ error: "boxes must be valid JSON" });
+    return { error: "boxes must be valid JSON" };
   }
   if (!Array.isArray(boxes)) {
-    return res.status(400).json({ error: "boxes must be an array" });
+    return { error: "boxes must be an array" };
   }
   for (const box of boxes) {
     const fieldsOk =
@@ -187,9 +172,127 @@ uploadRoutes.post(
       box.x + box.width <= 1.02 &&
       box.y + box.height <= 1.02;
     if (!fieldsOk) {
-      return res.status(400).json({ error: "A letter QR box is invalid" });
+      return { error: "A letter QR box is invalid" };
     }
   }
+
+  return {
+    graphicFile,
+    links,
+    signatureName,
+    signatureTitle,
+    typography,
+    includeGreeting,
+    padding,
+    qrCaption,
+    textStyles,
+    greetingPos,
+    boxes,
+  };
+}
+
+// One real letter page, built by the same code as "All Letters.pdf", so it can be checked
+// before generating every letter. The QR codes are samples of the same length as the real
+// ones (so they look identical); the real codes are only created with the campaign.
+// Also times the work, so the dashboard can estimate how long the full zip will take.
+uploadRoutes.post(
+  "/preview-letter",
+  requireAuth,
+  upload.fields([{ name: "graphic", maxCount: 1 }]),
+  async (req, res) => {
+    const settings = parseLetterRequest(req);
+    if (settings.error) return res.status(400).json({ error: settings.error });
+    if (!settings.graphicFile) return res.status(400).json({ error: "No letter graphic uploaded" });
+    const personName = String(req.body.personName || "").trim().slice(0, 200) || "Rajesh Kumar";
+    const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+
+    const boxes = settings.boxes.map((b) => ({ ...b, campaignLinkId: b.linkIndex }));
+    const sampleCodes = (n) =>
+      settings.links.map((_, i) => ({ campaignLinkId: i, code: `SAMPLE${String((n * 10 + i) % 100).padStart(2, "0")}` }));
+    const letter = (book, n, name) =>
+      addPersonLetter({
+        book,
+        personName: name,
+        codesForPerson: sampleCodes(n),
+        boxes,
+        signatureName: settings.signatureName,
+        signatureTitle: settings.signatureTitle,
+        includeGreeting: settings.includeGreeting,
+        greetingPos: settings.greetingPos,
+        padding: settings.padding,
+        qrCaption: settings.qrCaption,
+        textStyles: settings.textStyles,
+        publicBaseUrl,
+      });
+
+    try {
+      const t0 = performance.now();
+      const book = await createLetterBook(settings.graphicFile.buffer, settings.graphicFile.mimetype);
+      const t1 = performance.now();
+      await letter(book, 0, personName);
+      const bytes = await saveLetterBook(book);
+      const t2 = performance.now();
+
+      // Time a few more pages (plus the zip's QR images) to estimate the per-person cost.
+      const SAMPLE_PAGES = 4;
+      const timing = await createLetterBook(settings.graphicFile.buffer, settings.graphicFile.mimetype);
+      await letter(timing, 0, personName); // fonts get embedded on the first page; not counted
+      const t3 = performance.now();
+      for (let n = 1; n <= SAMPLE_PAGES; n++) {
+        await letter(timing, n, personName);
+        for (const code of sampleCodes(n)) {
+          await QRCode.toBuffer(`${publicBaseUrl}/r/${code.code}`, { width: 512, margin: 2 });
+        }
+      }
+      const t4 = performance.now();
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", 'inline; filename="Sample letter.pdf"');
+      res.setHeader("X-Setup-Ms", String(Math.round(t1 - t0)));
+      res.setHeader("X-First-Page-Ms", String(Math.round(t2 - t1)));
+      res.setHeader("X-Per-Page-Ms", String(Math.round((t4 - t3) / SAMPLE_PAGES)));
+      res.end(Buffer.from(bytes));
+    } catch (err) {
+      console.error("Preview letter failed:", err);
+      res.status(500).json({ error: "Could not build the sample page. Please try again." });
+    }
+  }
+);
+
+uploadRoutes.post(
+  "/upload",
+  requireAuth,
+  upload.fields([
+    { name: "file", maxCount: 1 },
+    { name: "graphic", maxCount: 1 },
+  ]),
+  async (req, res) => {
+  const excelFile = req.files?.file?.[0];
+  if (!excelFile) {
+    return res.status(400).json({ error: "No file uploaded" });
+  }
+  req.file = excelFile; // downstream code below reads req.file
+
+  const { campaignName } = req.body || {};
+  if (!campaignName || !campaignName.trim()) {
+    return res.status(400).json({ error: "campaignName is required" });
+  }
+
+  const settings = parseLetterRequest(req);
+  if (settings.error) return res.status(400).json({ error: settings.error });
+  const {
+    graphicFile,
+    links,
+    signatureName,
+    signatureTitle,
+    typography,
+    includeGreeting,
+    padding,
+    qrCaption,
+    textStyles,
+    greetingPos,
+    boxes,
+  } = settings;
 
   const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
 

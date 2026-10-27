@@ -33,7 +33,7 @@ if (allowedOrigins.length) {
       origin: allowedOrigins,
       credentials: true,
       // Read by the dashboard after generating, to confirm the counts.
-      exposedHeaders: ["X-Campaign-Id", "X-People-Count", "X-Letter-Pages"],
+      exposedHeaders: ["X-Campaign-Id", "X-People-Count", "X-Letter-Pages", "X-Setup-Ms", "X-First-Page-Ms", "X-Per-Page-Ms"],
     })
   );
 }

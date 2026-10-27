@@ -1981,3 +1981,147 @@ input[aria-invalid="true"] {
     max-width: 170px;
   }
 }
+
+/* Review: one real PDF page next to what it is */
+.proof {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(260px, 1fr);
+  gap: 20px;
+  align-items: start;
+  margin: 14px 0 6px;
+  padding: 16px;
+  border-radius: 12px;
+  background: #e9edeb;
+}
+
+.proof-page {
+  min-height: 200px;
+}
+
+.pdf-page-view canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18), 0 6px 20px rgba(0, 0, 0, 0.08);
+}
+
+.proof-placeholder {
+  aspect-ratio: 595 / 842;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: #fff;
+  border-radius: 4px;
+}
+
+.proof-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.proof-side h3 {
+  font-size: 1.05rem;
+  line-height: 1.35;
+}
+
+.proof-side .muted {
+  margin: 0;
+}
+
+.notice-inline {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff8e6;
+  border: 1px solid #f3dd9c;
+  font-size: 0.85rem;
+}
+
+.estimate-row {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.estimate-row p {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.progress-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.progress-bar {
+  height: 8px;
+  margin: 8px 0 4px;
+  border-radius: 999px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.progress-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 1s linear;
+}
+
+@media (max-width: 760px) {
+  .proof {
+    grid-template-columns: 1fr;
+    padding: 10px;
+  }
+
+  .proof-page {
+    max-width: 420px;
+    width: 100%;
+    margin: 0 auto;
+  }
+}
+
+/* The sample page fits in the window, with the estimate and Generate button beside it. */
+.proof {
+  grid-template-columns: minmax(0, min(52%, calc((100vh - 120px) * 0.707))) minmax(260px, 1fr);
+}
+
+.generate-panel {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.proof-side .estimate-row {
+  margin-top: 0;
+  background: #fff;
+}
+
+.proof-side .wizard-nav {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.proof-side .progress-panel {
+  margin-top: 0;
+  background: #fff;
+}
+
+@media (max-width: 760px) {
+  .proof {
+    grid-template-columns: 1fr;
+  }
+}

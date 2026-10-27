@@ -3,6 +3,8 @@ import { toast } from "react-hot-toast";
 import { api, downloadBlob } from "../api.js";
 import { goBack, goBackTo, historyIndex, navigate } from "../router.jsx";
 import { letterSummary, zipFileName } from "../lib/downloads.js";
+import { estimateGeneration, formatBytes, formatDuration, formatRange } from "../lib/estimate.js";
+import PdfPageView from "./PdfPageView.jsx";
 import LetterGraphicCalibrator from "./LetterGraphicCalibrator.jsx";
 import TextStyleEditor from "./TextStyleEditor.jsx";
 import { SkippedRows } from "./CampaignDetail.jsx";
@@ -285,32 +287,103 @@ export default function NewCampaignWizard({ step, active, onFinished, onDiscard 
     return () => clearInterval(t);
   }, [busy]);
 
-  async function generate() {
+  // The letter settings, exactly as both the sample page and the real letters use them.
+  const letterSettings = {
+    links: links.map(({ label, destinationUrl }) => ({ label: label.trim(), destinationUrl: destinationUrl.trim() })),
+    graphic: graphicFile,
     // Each box's link is sent as its position in the list; the server has no link ids yet.
     // A box is never left without a link: one with no (or a removed) link uses the first.
-    const resolvedBoxes = boxes.map(({ linkUid, x, y, width, height }) => ({
+    boxes: boxes.map(({ linkUid, x, y, width, height }) => ({
       linkIndex: Math.max(0, links.findIndex((l) => l.uid === linkUid)),
       x,
       y,
       width,
       height,
-    }));
+    })),
+    // No signature = no footer; the server only draws one when a name/title is given.
+    signatureName: includeSignature ? signatureName.trim() : "",
+    signatureTitle: includeSignature ? signatureTitle.trim() : "",
+    includeGreeting,
+    greetingPos: includeGreeting ? greetingPos : null,
+    padding,
+    qrCaption: showCaption ? { text: captionText } : null,
+    textStyles,
+  };
+
+  // ---- Real PDF sample page ------------------------------------------------------------
+  // Made by the server with the same code as "All Letters.pdf". Remembers which settings it
+  // was made with, so it can say when it's out of date.
+  const proofKey = JSON.stringify({
+    ...letterSettings,
+    graphic: graphicFile && [graphicFile.name, graphicFile.size, graphicFile.lastModified],
+    name: previewName,
+  });
+  const [proof, setProof] = useState(null); // { key, name, blob, url, timings }
+  const [proofLoading, setProofLoading] = useState(false);
+  const [proofError, setProofError] = useState("");
+  const proofFresh = proof?.key === proofKey;
+  // When the review opens, bring the sample page into view (it's taller than the page header leaves room for).
+  const proofRef = useRef(null);
+  useEffect(() => {
+    if (!(active && step === "review" && graphicFile)) return;
+    // After the app's own "new screens open at the top" scroll has run.
+    const t = setTimeout(() => {
+      if (!proofRef.current) return;
+      const top = proofRef.current.getBoundingClientRect().top + window.scrollY - 70;
+      window.scrollTo({ top, behavior: "smooth" });
+    }, 60);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, step]);
+
+  async function makeProof() {
+    if (!graphicFile || !boxes.length) return;
+    setProofLoading(true);
+    setProofError("");
+    const key = proofKey;
+    const name = previewName;
+    try {
+      const result = await api.previewLetter({ ...letterSettings, personName: name });
+      setProof((old) => {
+        if (old?.url) URL.revokeObjectURL(old.url);
+        return { key, name, blob: result.blob, url: URL.createObjectURL(result.blob), timings: { ...result, pdfBytes: result.blob.size } };
+      });
+    } catch (err) {
+      setProofError(err.message);
+    } finally {
+      setProofLoading(false);
+    }
+  }
+
+  // Opening the review step makes the sample page straight away (if it isn't up to date).
+  // Tried once per set of settings, so a failure doesn't retry in a loop.
+  const autoProofKey = useRef(null);
+  useEffect(() => {
+    if (!active || step !== "review" || !graphicFile || !boxes.length || proofFresh || proofLoading) return;
+    if (autoProofKey.current === proofKey) return;
+    autoProofKey.current = proofKey;
+    makeProof();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, step, proofKey]);
+
+  const estimate =
+    proof && sheet
+      ? estimateGeneration({
+          proof: proof.timings,
+          people: sheet.peopleCount,
+          links: links.length,
+          graphicBytes: graphicFile?.size || 0,
+          excelBytes: excelFile?.size || 0,
+        })
+      : null;
+
+  async function generate() {
     setBusy(true);
     try {
       const result = await api.createCampaign({
         campaignName: campaignName.trim(),
-        links: links.map(({ label, destinationUrl }) => ({ label: label.trim(), destinationUrl: destinationUrl.trim() })),
         file: excelFile,
-        graphic: graphicFile,
-        boxes: resolvedBoxes,
-        // No signature = no footer; the server only draws one when a name/title is given.
-        signatureName: includeSignature ? signatureName.trim() : "",
-        signatureTitle: includeSignature ? signatureTitle.trim() : "",
-        includeGreeting,
-        greetingPos: includeGreeting ? greetingPos : null,
-        padding,
-        qrCaption: showCaption ? { text: captionText } : null,
-        textStyles,
+        ...letterSettings,
       });
       downloadBlob(result.blob, zipFileName(campaignName));
       const expectedPages = graphicFile ? sheet.peopleCount : 0;
@@ -356,6 +429,60 @@ export default function NewCampaignWizard({ step, active, onFinished, onDiscard 
       </div>
     );
   };
+
+  // Time estimate + the generate button (or progress), shown next to the sample page.
+  const generatePanel = (
+    <div className="generate-panel">
+      <div className="estimate-row">
+        <span className="eyebrow">Time needed</span>
+        {estimate ? (
+          <p>
+            <strong>{formatRange(estimate)}</strong> to make {sheet.peopleCount} letters and download the zip
+            (about {formatBytes(estimate.zipBytes)}). Estimated from making the sample page on the server just now.
+          </p>
+        ) : graphicFile ? (
+          <p className="muted">Worked out after the sample page is made…</p>
+        ) : (
+          <p>
+            <strong>Usually under 30 seconds</strong> for QR images only.
+          </p>
+        )}
+      </div>
+
+      {busy ? (
+        <div className="progress-panel" role="status">
+          <span className="spinner" aria-hidden="true" />
+          <div className="progress-text">
+            <strong>
+              Generating {sheet.peopleCount} letters… {formatDuration(elapsed * 1000)}
+              {estimate && elapsed * 1000 < estimate.highMs
+                ? `, about ${formatDuration(Math.max(1000, estimate.totalMs - elapsed * 1000))} left`
+                : ""}
+            </strong>
+            {estimate && (
+              <div className="progress-bar" aria-hidden="true">
+                <span style={{ width: `${Math.min(96, (elapsed * 1000 / estimate.totalMs) * 100)}%` }} />
+              </div>
+            )}
+            <p className="muted small">
+              {estimate && elapsed * 1000 > estimate.highMs
+                ? "Taking a little longer than expected. It's still working; keep this tab open."
+                : "Keep this tab open; the zip downloads by itself when it's ready."}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="wizard-nav">
+          <button type="button" className="secondary" onClick={() => goBack("/new/design")}>
+            ← Back
+          </button>
+          <button type="button" className="primary-large" onClick={generate}>
+            Create campaign &amp; download zip
+          </button>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="wizard">
@@ -543,6 +670,11 @@ export default function NewCampaignWizard({ step, active, onFinished, onDiscard 
           {graphicFile && !boxes.length && (
             <p className="error-text">Add at least one QR box to the page. Without one, the letters would have no QR code.</p>
           )}
+          {graphicFile && boxes.length > 0 && (
+            <p className="muted small">
+              The next step shows the real PDF page for {previewName} before anything else is generated.
+            </p>
+          )}
           {navFor("design")}
         </section>
       )}
@@ -550,6 +682,73 @@ export default function NewCampaignWizard({ step, active, onFinished, onDiscard 
       {sheet && excelFile && (
         <section className="card" hidden={shown !== "review"}>
           <h2>Review &amp; generate</h2>
+          {graphicFile && boxes.length > 0 && (
+            <div className="proof" ref={proofRef}>
+              <div className="proof-page">
+                {proof && <PdfPageView blob={proof.blob} label={`Sample PDF page for ${proof.name}`} />}
+                {!proof && proofLoading && (
+                  <div className="proof-placeholder">
+                    <span className="spinner" aria-hidden="true" />
+                    <span className="muted small">Making the real PDF page…</span>
+                  </div>
+                )}
+              </div>
+              <div className="proof-side">
+                <span className="eyebrow">Real PDF check</span>
+                <h3>
+                  {proof ? `This is ${proof.name}'s page, exactly as in "All Letters.pdf"` : "Making one real page of the PDF…"}
+                </h3>
+                <p className="muted small">
+                  Made by the same code that will make all {sheet.peopleCount} letters. Each real letter gets that person's
+                  name and their own QR code; the QR on this sample has the same size and density but doesn't open
+                  anything.
+                </p>
+                <label className="field-label">
+                  Check the page for
+                  <div className="preview-person">
+                    <button type="button" className="secondary icon-button" aria-label="Previous person" disabled={busy}
+                      onClick={() => setPreviewIndex((i) => (i - 1 + previewPeople.length) % previewPeople.length)}>
+                      ‹
+                    </button>
+                    <select value={previewIndex} onChange={(e) => setPreviewIndex(Number(e.target.value))} disabled={busy}>
+                      {previewPeople.map((p, i) => (
+                        <option key={p.row} value={i}>
+                          {i + 1}. {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button type="button" className="secondary icon-button" aria-label="Next person" disabled={busy}
+                      onClick={() => setPreviewIndex((i) => (i + 1) % previewPeople.length)}>
+                      ›
+                    </button>
+                  </div>
+                </label>
+                {proofError && <p className="error-text">{proofError}</p>}
+                <div className="button-row">
+                  <button type="button" className={proofFresh ? "secondary small-button" : "small-button"} onClick={makeProof} disabled={proofLoading || busy}>
+                    {proofLoading ? "Making page…" : proofFresh ? "Remake page" : proof ? "Update page for these settings" : "Make page"}
+                  </button>
+                  {proof && (
+                    <a className="button-link secondary-link small-button" href={proof.url} target="_blank" rel="noreferrer">
+                      Open PDF
+                    </a>
+                  )}
+                  {proof && (
+                    <a className="button-link secondary-link small-button" href={proof.url} download={`Sample letter - ${proof.name}.pdf`}>
+                      Download sample
+                    </a>
+                  )}
+                </div>
+                {proof && !proofFresh && !proofLoading && (
+                  <p className="notice-inline">Settings or name changed since this page was made. Update it to check again.</p>
+                )}
+                <button type="button" className="link-button" onClick={() => goStep("design")} disabled={busy}>
+                  Change the design
+                </button>
+                {generatePanel}
+              </div>
+            </div>
+          )}
           <dl className="review-list">
             <div>
               <dt>Campaign</dt>
@@ -625,26 +824,7 @@ export default function NewCampaignWizard({ step, active, onFinished, onDiscard 
             </div>
           </dl>
 
-          {busy ? (
-            <div className="progress-panel" role="status">
-              <span className="spinner" aria-hidden="true" />
-              <div>
-                <strong>Generating {sheet.peopleCount} letters… {elapsed}s</strong>
-                <p className="muted small">
-                  Large lists can take a minute or two. Keep this tab open; the zip downloads by itself when it's ready.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="wizard-nav">
-              <button type="button" className="secondary" onClick={() => goBack("/new/design")}>
-                ← Back
-              </button>
-              <button type="button" className="primary-large" onClick={generate}>
-                Create campaign &amp; download zip
-              </button>
-            </div>
-          )}
+          {!(graphicFile && boxes.length > 0) && generatePanel}
         </section>
       )}
     </div>
