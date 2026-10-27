@@ -19,7 +19,15 @@ redirectRoutes.get("/r/:code", async (req, res) => {
     [req.params.code]
   );
   const match = rows[0];
-  const fallback = match?.destination_url || "https://example.com";
+  let fallback = match?.destination_url || "https://example.com";
+
+  // A QR from a sample letter page: open the link, but don't count it as a scan.
+  if (!match) {
+    const { rows: sampleRows } = await pool.query("SELECT destination_url FROM sample_codes WHERE code = $1", [
+      req.params.code,
+    ]);
+    if (sampleRows[0]) fallback = sampleRows[0].destination_url;
+  }
 
   if (match) {
     // Camera apps and messaging apps often silently prefetch a link (to build a preview)

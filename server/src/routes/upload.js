@@ -4,7 +4,7 @@ import { analyzePeopleSheet, repeatedNames } from "../spreadsheet.js";
 import QRCode from "qrcode";
 import archiver from "archiver";
 import { customAlphabet } from "nanoid";
-import { withTransaction } from "../db.js";
+import { pool, withTransaction } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { failZip, uniqueNamer, verifyZipContents } from "../zipStream.js";
 import { createLetterBook, saveLetterBook, addPersonLetter } from "../letters.js";
@@ -207,8 +207,27 @@ uploadRoutes.post(
     const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
 
     const boxes = settings.boxes.map((b) => ({ ...b, campaignLinkId: b.linkIndex }));
+
+    // The sample page's QR codes look exactly like real ones (same length and alphabet) and
+    // open each link's destination when scanned, without counting as a scan. Old ones are
+    // cleared after a week.
+    let shownCodes;
+    try {
+      await pool.query("DELETE FROM sample_codes WHERE created_at < now() - interval '7 days'");
+      const codes = await generateUniqueCodes(pool, settings.links.length);
+      await pool.query(
+        `INSERT INTO sample_codes (code, destination_url)
+         SELECT * FROM unnest($1::text[], $2::text[]) ON CONFLICT (code) DO NOTHING`,
+        [codes, settings.links.map((l) => l.destinationUrl)]
+      );
+      shownCodes = settings.links.map((_, i) => ({ campaignLinkId: i, code: codes[i] }));
+    } catch (err) {
+      console.error("Could not save sample QR codes:", err);
+      return res.status(500).json({ error: "Could not build the sample page. Please try again." });
+    }
+    // Pages made only to time the work use throwaway codes of the same length.
     const sampleCodes = (n) =>
-      settings.links.map((_, i) => ({ campaignLinkId: i, code: `SAMPLE${String((n * 10 + i) % 100).padStart(2, "0")}` }));
+      n === 0 ? shownCodes : settings.links.map((_, i) => ({ campaignLinkId: i, code: nanoid() }));
     const letter = (book, n, name) =>
       addPersonLetter({
         book,

@@ -700,8 +700,8 @@ export default function NewCampaignWizard({ step, active, onFinished, onDiscard 
                 </h3>
                 <p className="muted small">
                   Made by the same code that will make all {sheet.peopleCount} letters. Each real letter gets that person's
-                  name and their own QR code; the QR on this sample has the same size and density but doesn't open
-                  anything.
+                  name and their own QR code. The QR on this sample opens your link so you can test-scan it, but
+                  sample scans are never counted as views.
                 </p>
                 <label className="field-label">
                   Check the page for

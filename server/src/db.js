@@ -113,6 +113,15 @@ export async function initSchema() {
   await pool.query("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS sheet_name_column TEXT");
   await pool.query("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS sheet_skipped_json TEXT");
   await pool.query("ALTER TABLE people ADD COLUMN IF NOT EXISTS sheet_row INTEGER");
+  // QR codes on sample letter pages (made before a campaign exists): they open the link's
+  // destination so the sample can be test-scanned, but their scans are never counted.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sample_codes (
+      code TEXT PRIMARY KEY,
+      destination_url TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
 
   await migrateSingleLinkSchema();
 
