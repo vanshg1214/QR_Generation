@@ -3,7 +3,7 @@ import { pool } from "../db.js";
 import { requireAuth } from "../auth.js";
 import QRCode from "qrcode";
 import archiver from "archiver";
-import { failZip } from "../zipStream.js";
+import { failZip, sanitizeFilename, uniqueNamer } from "../zipStream.js";
 import { createLetterBook, saveLetterBook, addPersonLetter } from "../letters.js";
 import { resolveTextStyles } from "../textStyles.js";
 
@@ -226,20 +226,6 @@ campaignRoutes.delete("/campaigns/:id", requireAuth, async (req, res) => {
   }
   res.json({ ok: true });
 });
-
-function sanitizeFilename(name) {
-  return name.replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "") || "item";
-}
-
-function uniqueNamer() {
-  const used = new Map();
-  return (rawName) => {
-    const base = sanitizeFilename(rawName);
-    const count = used.get(base) || 0;
-    used.set(base, count + 1);
-    return count === 0 ? base : `${base}_${count + 1}`;
-  };
-}
 
 campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, res) => {
   const campaignId = Number(req.params.id);

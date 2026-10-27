@@ -6,7 +6,7 @@ import archiver from "archiver";
 import { customAlphabet } from "nanoid";
 import { withTransaction } from "../db.js";
 import { requireAuth } from "../auth.js";
-import { failZip } from "../zipStream.js";
+import { failZip, sanitizeFilename, uniqueNamer } from "../zipStream.js";
 import { createLetterBook, saveLetterBook, addPersonLetter } from "../letters.js";
 import { normalizeTextStyles } from "../textStyles.js";
 import { captionLines, MAX_CAPTION_LINES } from "../qrCaptionLayout.js";
@@ -39,21 +39,6 @@ async function generateUniqueCodes(client, count) {
     for (const code of batch) codes.add(code);
   }
   return [...codes];
-}
-
-function sanitizeFilename(name) {
-  return name.replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "") || "item";
-}
-
-// Appends "_2", "_3", ... to keep names unique within a given scope (a zip folder, etc).
-function uniqueNamer() {
-  const used = new Map();
-  return (rawName) => {
-    const base = sanitizeFilename(rawName);
-    const count = used.get(base) || 0;
-    used.set(base, count + 1);
-    return count === 0 ? base : `${base}_${count + 1}`;
-  };
 }
 
 uploadRoutes.post(
