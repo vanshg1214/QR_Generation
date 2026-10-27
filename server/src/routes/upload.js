@@ -1,6 +1,6 @@
-import { Router } from "express";
+import { asyncRouter } from "../asyncRouter.js";
 import multer from "multer";
-import { analyzePeopleSheet, repeatedNames } from "../spreadsheet.js";
+import { analyzePeopleSheet, contactKey, repeatedNames } from "../spreadsheet.js";
 import QRCode from "qrcode";
 import archiver from "archiver";
 import { customAlphabet } from "nanoid";
@@ -11,7 +11,7 @@ import { createLetterBook, saveLetterBook, addPersonLetter } from "../letters.js
 import { normalizeTextStyles } from "../textStyles.js";
 import { captionLines, MAX_CAPTION_LINES } from "../qrCaptionLayout.js";
 
-export const uploadRoutes = Router();
+export const uploadRoutes = asyncRouter();
 
 const upload = multer({ storage: multer.memoryStorage() });
 const GRAPHIC_MAX_BYTES = 20 * 1024 * 1024;
@@ -52,6 +52,8 @@ function sheetReport(analysis) {
     headerRow: analysis.headerRow,
     nameColumn: analysis.nameColumn,
     dataRows: analysis.dataRows,
+    contactColumn: analysis.contactColumn,
+    peopleWithContact: analysis.peopleWithContact,
     peopleCount: analysis.people.length,
     people: analysis.people.map(({ row, name }) => ({ row, name })),
     skipped: analysis.skipped,
@@ -327,16 +329,20 @@ uploadRoutes.post(
     return res.status(400).json({ error: "No rows had a usable Name value" });
   }
 
+  // Optional: the day the letters go out (YYYY-MM-DD), for "days to first scan".
+  const sentAt = /^\d{4}-\d{2}-\d{2}$/.test(req.body.sentAt || "") ? req.body.sentAt : null;
+
   const created = await withTransaction(async (client) => {
     const { rows: campaignRows } = await client.query(
       `INSERT INTO campaigns (name, signature_name, signature_title, typography, include_greeting, greeting_pos_json,
-         letter_padding, qr_caption_json, text_styles_json, sheet_data_rows, sheet_name_column, sheet_skipped_json)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+         letter_padding, qr_caption_json, text_styles_json, sheet_data_rows, sheet_name_column, sheet_skipped_json, sent_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
       [
         campaignName.trim(), signatureName, signatureTitle, typography, includeGreeting,
         greetingPos ? JSON.stringify(greetingPos) : null, padding, qrCaption ? JSON.stringify(qrCaption) : null,
         JSON.stringify(textStyles), analysis.dataRows, analysis.nameColumn,
         JSON.stringify(analysis.skipped.slice(0, MAX_SKIPPED_STORED)),
+        sentAt,
       ]
     );
     const campaignId = campaignRows[0].id;
@@ -376,15 +382,16 @@ uploadRoutes.post(
     );
     const personIds = idRows.map((r) => r.id);
     await client.query(
-      `INSERT INTO people (id, campaign_id, name, details_json, sheet_row)
-       SELECT id, $1, name, details, sheet_row
-       FROM unnest($2::int[], $3::text[], $4::text[], $5::int[]) AS t(id, name, details, sheet_row)`,
+      `INSERT INTO people (id, campaign_id, name, details_json, sheet_row, contact_key)
+       SELECT id, $1, name, details, sheet_row, contact_key
+       FROM unnest($2::int[], $3::text[], $4::text[], $5::int[], $6::text[]) AS t(id, name, details, sheet_row, contact_key)`,
       [
         campaignId,
         personIds,
         sheetRows.map((r) => r.name),
         sheetRows.map((r) => JSON.stringify(r.details)),
         sheetRows.map((r) => r.row),
+        sheetRows.map((r) => contactKey(r.details)),
       ]
     );
 

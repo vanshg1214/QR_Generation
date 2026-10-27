@@ -37,6 +37,17 @@ export const api = {
       body: JSON.stringify(fields),
     }).then((r) => r.json()),
 
+  // Newest scans first, with NEW / CAME BACK / REPEAT badges and each person's scan history.
+  getActivity: ({ campaignId, before, limit = 30 } = {}) => {
+    const q = new URLSearchParams({ limit: String(limit) });
+    if (campaignId) q.set("campaignId", String(campaignId));
+    if (before) q.set("before", before);
+    return request(`/activity?${q}`).then((r) => r.json());
+  },
+
+  // People recognised across campaigns (by phone/email), with loyalty groups.
+  getContacts: () => request("/contacts").then((r) => r.json()),
+
   deleteCampaign: (id) =>
     request(`/campaigns/${id}`, { method: "DELETE" }).then((r) => r.json()),
 
@@ -68,10 +79,11 @@ export const api = {
     };
   },
 
-  async createCampaign({ campaignName, file, ...settings }) {
+  async createCampaign({ campaignName, file, sentAt, ...settings }) {
     const formData = letterForm(settings);
     formData.append("campaignName", campaignName);
     formData.append("file", file);
+    if (sentAt) formData.append("sentAt", sentAt);
     const res = await fetch(`${API_BASE}/api/upload`, {
       method: "POST",
       credentials: "include",

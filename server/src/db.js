@@ -1,4 +1,6 @@
 import pg from "pg";
+import { BOT_USER_AGENT } from "./analytics.js";
+import { contactKey } from "./spreadsheet.js";
 
 const { Pool } = pg;
 
@@ -123,11 +125,47 @@ export async function initSchema() {
     )
   `);
 
+  // Analytics (see analytics_plan.md): link-preview scans are kept but flagged and left out
+  // of every count; campaigns get the date the letters went out; people get a contact key
+  // (from a phone/email column) to recognise them across campaigns.
+  await pool.query("ALTER TABLE scans ADD COLUMN IF NOT EXISTS is_bot BOOLEAN NOT NULL DEFAULT false");
+  await pool.query("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS sent_at DATE");
+  await pool.query("ALTER TABLE people ADD COLUMN IF NOT EXISTS contact_key TEXT");
+
   await migrateSingleLinkSchema();
 
   // Only valid once code_id definitely exists on scans (fresh installs get it from the
   // CREATE TABLE above; migrated ones get it inside migrateSingleLinkSchema).
   await pool.query("CREATE INDEX IF NOT EXISTS idx_scans_code_id ON scans(code_id)");
+  await pool.query("CREATE INDEX IF NOT EXISTS idx_scans_scanned_at ON scans(scanned_at)");
+  await pool.query("CREATE INDEX IF NOT EXISTS idx_people_contact_key ON people(contact_key)");
+  await backfillAnalytics();
+}
+
+// Fills in the analytics fields for data saved before they existed. Only touches rows that
+// haven't been filled yet, so it's quick after the first time.
+async function backfillAnalytics() {
+  // Link previews recorded before they were recognised.
+  await pool.query("UPDATE scans SET is_bot = true WHERE is_bot = false AND user_agent ~* $1", [BOT_USER_AGENT.source.replace(/\\b/g, "\\y")]);
+  // Contact keys from each person's saved Excel row ("" = no phone/email in the sheet).
+  const { rows } = await pool.query("SELECT id, details_json FROM people WHERE contact_key IS NULL");
+  if (!rows.length) return;
+  const ids = [];
+  const keys = [];
+  for (const r of rows) {
+    let details = {};
+    try {
+      details = JSON.parse(r.details_json || "{}");
+    } catch {
+      // unreadable row: no key
+    }
+    ids.push(r.id);
+    keys.push(contactKey(details));
+  }
+  await pool.query(
+    "UPDATE people p SET contact_key = t.key FROM unnest($1::int[], $2::text[]) AS t(id, key) WHERE p.id = t.id",
+    [ids, keys]
+  );
 }
 
 async function columnExists(table, column) {

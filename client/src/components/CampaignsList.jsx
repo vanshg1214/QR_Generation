@@ -4,6 +4,7 @@ import { api } from "../api.js";
 import { Link, navigate } from "../router.jsx";
 import { downloadCampaignZip } from "../lib/downloads.js";
 import { IconUsers, IconEye, IconScan, IconPlus, IconLayers, IconInbox, IconTrash, IconDownload } from "./icons.jsx";
+import ActivityFeed from "./ActivityFeed.jsx";
 
 function formatDate(value) {
   if (!value) return "—";
@@ -43,8 +44,9 @@ export default function CampaignsList({ hasDraft, onDiscardDraft }) {
           people: acc.people + c.peopleCount,
           viewed: acc.viewed + c.viewedCount,
           scans: acc.scans + c.totalScans,
+          today: acc.today + (c.scansToday || 0),
         }),
-        { people: 0, viewed: 0, scans: 0 }
+        { people: 0, viewed: 0, scans: 0, today: 0 }
       ),
     [campaigns]
   );
@@ -115,8 +117,13 @@ export default function CampaignsList({ hasDraft, onDiscardDraft }) {
         <Stat icon={<IconLayers />} value={campaigns.length} label="Campaigns" />
         <Stat icon={<IconUsers />} value={totals.people} label="People (letters)" />
         <Stat icon={<IconEye />} value={totals.viewed} label={`Viewed · ${percent(totals.viewed, totals.people)}`} />
-        <Stat icon={<IconScan />} value={totals.scans} label="Total scans" />
+        <Stat icon={<IconScan />} value={totals.scans} label="Total scans" delta={totals.today ? `+${totals.today} today` : null} />
       </div>
+
+      <ActivityFeed title="Latest scans" compact />
+      <p className="see-all">
+        <Link to="/activity">See all scan activity →</Link>
+      </p>
 
       <section className="card">
         <div className="table-header">
@@ -169,7 +176,10 @@ export default function CampaignsList({ hasDraft, onDiscardDraft }) {
                 <span data-label="Viewed">
                   {c.viewedCount} <small className="muted">({percent(c.viewedCount, c.peopleCount)})</small>
                 </span>
-                <span data-label="Scans">{c.totalScans}</span>
+                <span data-label="Scans">
+                  {c.totalScans}
+                  {c.scansToday > 0 && <small className="delta"> +{c.scansToday} today</small>}
+                </span>
                 <span data-label="Links">{c.linkCount}</span>
                 <span data-label="Created">{formatDate(c.createdAt)}</span>
                 <span className="row-actions">
@@ -190,12 +200,15 @@ export default function CampaignsList({ hasDraft, onDiscardDraft }) {
   );
 }
 
-export function Stat({ icon, value, label }) {
+export function Stat({ icon, value, label, delta }) {
   return (
     <div className="stat">
       <span className="stat-icon">{icon}</span>
       <div>
-        <span className="stat-value">{value}</span>
+        <span className="stat-value">
+          {value}
+          {delta && <span className="stat-delta">{delta}</span>}
+        </span>
         <span className="stat-label">{label}</span>
       </div>
     </div>

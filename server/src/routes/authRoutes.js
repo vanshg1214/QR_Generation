@@ -1,7 +1,7 @@
-import { Router } from "express";
+import { asyncRouter } from "../asyncRouter.js";
 import { checkPassword } from "../auth.js";
 
-export const authRoutes = Router();
+export const authRoutes = asyncRouter();
 
 authRoutes.post("/login", (req, res) => {
   const { password } = req.body || {};

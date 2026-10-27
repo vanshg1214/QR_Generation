@@ -12,6 +12,7 @@ import { qrRoutes } from "./routes/qr.js";
 import { campaignRoutes } from "./routes/campaigns.js";
 import { uploadRoutes } from "./routes/upload.js";
 import { exportRoutes } from "./routes/export.js";
+import { activityRoutes } from "./routes/activity.js";
 import { initSchema } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -69,6 +70,7 @@ app.use("/api", authRoutes);
 app.use("/api", campaignRoutes);
 app.use("/api", uploadRoutes);
 app.use("/api", exportRoutes);
+app.use("/api", activityRoutes);
 
 // Serve the built React dashboard in production.
 const clientDist = path.join(__dirname, "..", "..", "client", "dist");

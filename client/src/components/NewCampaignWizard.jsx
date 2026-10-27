@@ -69,6 +69,11 @@ function SheetReport({ sheet }) {
         Sheet "{sheet.sheetName}": headings found on Excel row {sheet.headerRow}, names read from the "{sheet.nameColumn}"
         column. Completely empty rows are ignored. Titles like Mr, Mrs and Dr are removed from names.
       </p>
+      <p className="muted small">
+        {sheet.contactColumn
+          ? `Phone/email column: "${sheet.contactColumn}" (${sheet.peopleWithContact} of ${sheet.peopleCount} people have one). It's used to recognise the same person in other campaigns.`
+          : "No phone or email column found. Add one (e.g. \"Mobile\" or \"Email\") to recognise the same person across campaigns on the Contacts page."}
+      </p>
 
       {sheet.skipped.length > 0 && <SkippedRows skipped={sheet.skipped} />}
 
@@ -131,6 +136,7 @@ function SheetReport({ sheet }) {
 
 export default function NewCampaignWizard({ step, active, onFinished, onDiscard }) {
   const [campaignName, setCampaignName] = useState("");
+  const [sentAt, setSentAt] = useState(""); // optional: the day the letters go out
   const [links, setLinks] = useState([emptyLink()]);
 
   const [excelFile, setExcelFile] = useState(null);
@@ -383,6 +389,7 @@ export default function NewCampaignWizard({ step, active, onFinished, onDiscard 
       const result = await api.createCampaign({
         campaignName: campaignName.trim(),
         file: excelFile,
+        sentAt,
         ...letterSettings,
       });
       downloadBlob(result.blob, zipFileName(campaignName));
@@ -515,6 +522,11 @@ export default function NewCampaignWizard({ step, active, onFinished, onDiscard 
             <label className="field-label">
               Campaign title
               <input type="text" placeholder="e.g. Product Launch 2026" value={campaignName} onChange={(e) => setCampaignName(e.target.value)} autoFocus />
+            </label>
+            <label className="field-label">
+              Letters sent on <span className="muted small">(optional, can be set later)</span>
+              <input type="date" value={sentAt} onChange={(e) => setSentAt(e.target.value)} className="date-input" />
+              <span className="muted small">Used to show how many days people take to scan after receiving the letter.</span>
             </label>
             <div className="field-label">
               Links
@@ -752,7 +764,10 @@ export default function NewCampaignWizard({ step, active, onFinished, onDiscard 
           <dl className="review-list">
             <div>
               <dt>Campaign</dt>
-              <dd>{campaignName.trim()}</dd>
+              <dd>
+                {campaignName.trim()}
+                <div className="muted small">{sentAt ? `Letters sent on ${sentAt}` : "Sent date not set (can be added later)"}</div>
+              </dd>
               <button type="button" className="link-button" onClick={() => goStep("details")} disabled={busy}>
                 Edit
               </button>

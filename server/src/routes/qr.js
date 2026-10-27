@@ -1,8 +1,8 @@
-import { Router } from "express";
+import { asyncRouter } from "../asyncRouter.js";
 import QRCode from "qrcode";
 import { pool } from "../db.js";
 
-export const qrRoutes = Router();
+export const qrRoutes = asyncRouter();
 
 // Public: regenerates a person's QR image on demand from their code, so an exported
 // spreadsheet (or anyone with the link) can view/download it without logging in --

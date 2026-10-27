@@ -21,7 +21,9 @@ export function estimateGeneration({ proof, people, links, graphicBytes, excelBy
   const transferMs = (graphicBytes + excelBytes + zipBytes) / bytesPerMs;
 
   const totalMs = serverMs + transferMs;
-  return { totalMs, lowMs: totalMs * 0.85, highMs: totalMs * 1.35, zipBytes };
+  // A busy or power-saving server slows down further over a long run than over the short
+  // sample (measured: up to ~1.4x), so the upper end allows for that.
+  return { totalMs, lowMs: totalMs * 0.85, highMs: totalMs * 1.5, zipBytes };
 }
 
 function roundSeconds(ms) {

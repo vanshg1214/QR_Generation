@@ -1,14 +1,38 @@
 import { Fragment, useMemo, useState, useEffect } from "react";
+import { interestLevel } from "../../../server/src/analytics.js";
+import ScanHistory, { personScans } from "./ScanHistory.jsx";
+import { InterestBadge } from "./CampaignCharts.jsx";
+import { scanTime } from "../lib/time.js";
 
-function formatDate(value) {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString();
-}
+const formatDate = (value) => (value ? scanTime(value) : "—");
 
-export default function PeopleTable({ people, initialSearch = "", initialExpandedId = null }) {
+const FILTERS = [
+  { key: "all", label: "Everyone" },
+  { key: "hot", label: "Hot" },
+  { key: "warm", label: "Warm" },
+  { key: "none", label: "Not yet scanned" },
+  { key: "repeat", label: "Scanned 2+ times" },
+  { key: "shared", label: "Shared (2+ phones)" },
+];
+
+const LEVEL_ORDER = { hot: 0, warm: 1, none: 2 };
+
+export default function PeopleTable({ people, initialSearch = "", initialExpandedId = null, initialFilter = "all" }) {
   const [search, setSearch] = useState(initialSearch);
+  const [filter, setFilter] = useState(initialFilter);
+  const levels = useMemo(() => {
+    const now = Date.now();
+    return new Map(people.map((p) => [p.id, interestLevel(p, now)]));
+  }, [people]);
+  const filterCounts = useMemo(() => {
+    const c = { all: people.length, hot: 0, warm: 0, none: 0, repeat: 0, shared: 0 };
+    for (const p of people) {
+      c[levels.get(p.id)]++;
+      if (p.scanCount >= 2) c.repeat++;
+      if (p.devices >= 2) c.shared++;
+    }
+    return c;
+  }, [people, levels]);
   // Campaigns that know each person's Excel row list them in sheet order by default.
   const hasRows = people.some((p) => p.sheetRow != null);
   const [sortKey, setSortKey] = useState(hasRows ? "sheetRow" : "name");
@@ -20,7 +44,7 @@ export default function PeopleTable({ people, initialSearch = "", initialExpande
   // Reset to page 1 whenever filters, sort, or page size change
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, sortKey, sortDir, pageSize]);
+  }, [search, filter, sortKey, sortDir, pageSize]);
 
   const extraColumns = useMemo(() => {
     const keys = new Set();
@@ -38,8 +62,11 @@ export default function PeopleTable({ people, initialSearch = "", initialExpande
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     let rows = people;
+    if (filter === "repeat") rows = rows.filter((p) => p.scanCount >= 2);
+    else if (filter === "shared") rows = rows.filter((p) => p.devices >= 2);
+    else if (filter !== "all") rows = rows.filter((p) => levels.get(p.id) === filter);
     if (term) {
-      rows = people.filter((p) => {
+      rows = rows.filter((p) => {
         const haystack = [p.name, ...Object.values(p.details)].join(" ").toLowerCase();
         return haystack.includes(term);
       });
@@ -50,6 +77,8 @@ export default function PeopleTable({ people, initialSearch = "", initialExpande
         if (sortKey === "name") return row.name.toLowerCase();
         if (sortKey === "sheetRow") return row.sheetRow ?? 0;
         if (sortKey === "scanCount") return row.scanCount;
+        if (sortKey === "interest") return LEVEL_ORDER[levels.get(row.id)];
+        if (sortKey === "devices") return row.devices || 0;
         if (sortKey === "lastScannedAt") return row.lastScannedAt || "";
         return (row.details[sortKey] || "").toString().toLowerCase();
       };
@@ -60,7 +89,7 @@ export default function PeopleTable({ people, initialSearch = "", initialExpande
       return 0;
     });
     return sorted;
-  }, [people, search, sortKey, sortDir]);
+  }, [people, search, filter, levels, sortKey, sortDir]);
 
   function toggleSort(key) {
     if (sortKey === key) {
@@ -78,7 +107,7 @@ export default function PeopleTable({ people, initialSearch = "", initialExpande
 
   const totalPages = Math.ceil(filtered.length / pageSize) || 1;
 
-  const columnCount = extraColumns.length + 5 + (hasRows ? 1 : 0);
+  const columnCount = extraColumns.length + 7 + (hasRows ? 1 : 0);
   const arrow = (key) => (sortKey === key ? (sortDir === "asc" ? " ↑" : " ↓") : "");
 
   return (
@@ -93,6 +122,19 @@ export default function PeopleTable({ people, initialSearch = "", initialExpande
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+      </div>
+      <div className="filter-chips" role="group" aria-label="Show">
+        {FILTERS.map((f) => (
+          <button
+            key={f.key}
+            type="button"
+            className={`filter-chip${filter === f.key ? " is-active" : ""}`}
+            aria-pressed={filter === f.key}
+            onClick={() => setFilter(f.key)}
+          >
+            {f.label} <span>{filterCounts[f.key]}</span>
+          </button>
+        ))}
       </div>
       <div className="table-scroll">
         <table>
@@ -112,7 +154,11 @@ export default function PeopleTable({ people, initialSearch = "", initialExpande
                 </th>
               ))}
               <th>Viewed</th>
+              <th onClick={() => toggleSort("interest")} className="sortable">Interest{arrow("interest")}</th>
               <th onClick={() => toggleSort("scanCount")} className="sortable">Scans{arrow("scanCount")}</th>
+              <th onClick={() => toggleSort("devices")} className="sortable" title="Different phones that scanned this person's QR codes">
+                Phones{arrow("devices")}
+              </th>
               <th onClick={() => toggleSort("lastScannedAt")} className="sortable">Last scanned{arrow("lastScannedAt")}</th>
             </tr>
           </thead>
@@ -127,7 +173,11 @@ export default function PeopleTable({ people, initialSearch = "", initialExpande
                   >
                     <td className="expand-toggle">{isExpanded ? "▾" : "▸"}</td>
                     {hasRows && <td className="muted">{p.sheetRow ?? "—"}</td>}
-                    <td>{p.name}</td>
+                    <td>
+                      <ScanHistory scans={personScans(p)} total={p.scanCount}>
+                        <span className="person-name">{p.name}</span>
+                      </ScanHistory>
+                    </td>
                     {extraColumns.map((col) => (
                       <td key={col}>{p.details[col] ?? ""}</td>
                     ))}
@@ -136,7 +186,14 @@ export default function PeopleTable({ people, initialSearch = "", initialExpande
                         {p.viewed ? "Yes" : "No"}
                       </span>
                     </td>
+                    <td>
+                      <InterestBadge level={levels.get(p.id)} />
+                    </td>
                     <td>{p.scanCount}</td>
+                    <td title={p.devices >= 2 ? "Scanned from more than one phone: the letter was probably forwarded" : undefined}>
+                      {p.devices || "—"}
+                      {p.devices >= 2 && <span className="shared-mark"> shared</span>}
+                    </td>
                     <td>{formatDate(p.lastScannedAt)}</td>
                   </tr>
                   {isExpanded && (

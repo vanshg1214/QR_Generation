@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { asyncRouter } from "../asyncRouter.js";
 import { pool } from "../db.js";
 import { requireAuth } from "../auth.js";
 import QRCode from "qrcode";
@@ -7,7 +7,7 @@ import { failZip, sanitizeFilename, uniqueNamer, verifyZipContents } from "../zi
 import { createLetterBook, saveLetterBook, addPersonLetter } from "../letters.js";
 import { resolveTextStyles } from "../textStyles.js";
 
-export const campaignRoutes = Router();
+export const campaignRoutes = asyncRouter();
 
 function safeJson(text, fallback) {
   try {
@@ -27,15 +27,22 @@ const CAMPAIGNS_LIST_QUERY = `
     (
       SELECT COUNT(DISTINCT p2.id) FROM people p2
       JOIN codes co2 ON co2.person_id = p2.id
-      JOIN scans s2 ON s2.code_id = co2.id
+      JOIN scans s2 ON s2.code_id = co2.id AND NOT s2.is_bot
       WHERE p2.campaign_id = c.id
     )::int AS viewed_count,
     (
       SELECT COUNT(*) FROM people p3
       JOIN codes co3 ON co3.person_id = p3.id
-      JOIN scans s3 ON s3.code_id = co3.id
+      JOIN scans s3 ON s3.code_id = co3.id AND NOT s3.is_bot
       WHERE p3.campaign_id = c.id
-    )::int AS total_scans
+    )::int AS total_scans,
+    (
+      SELECT COUNT(*) FROM people p4
+      JOIN codes co4 ON co4.person_id = p4.id
+      JOIN scans s4 ON s4.code_id = co4.id AND NOT s4.is_bot
+      WHERE p4.campaign_id = c.id
+        AND (s4.scanned_at AT TIME ZONE 'Asia/Kolkata')::date = (now() AT TIME ZONE 'Asia/Kolkata')::date
+    )::int AS scans_today
   FROM campaigns c
   ORDER BY c.created_at DESC
 `;
@@ -51,6 +58,7 @@ campaignRoutes.get("/campaigns", requireAuth, async (req, res) => {
       linkCount: r.link_count,
       viewedCount: r.viewed_count,
       totalScans: r.total_scans,
+      scansToday: r.scans_today,
     })),
   });
 });
@@ -60,11 +68,13 @@ const CAMPAIGN_PEOPLE_QUERY = `
     p.id AS person_id, p.name, p.details_json, p.created_at, p.sheet_row,
     cl.id AS link_id, cl.label, cl.position,
     co.code,
-    s.scanned_at
+    s.scanned_at,
+    md5(COALESCE(s.ip_hash, '') || COALESCE(s.user_agent, '')) AS device,
+    p.contact_key
   FROM people p
   JOIN codes co ON co.person_id = p.id
   JOIN campaign_links cl ON cl.id = co.campaign_link_id
-  LEFT JOIN scans s ON s.code_id = co.id
+  LEFT JOIN scans s ON s.code_id = co.id AND NOT s.is_bot
   WHERE p.campaign_id = $1
   ORDER BY p.id ASC, cl.position ASC, s.scanned_at ASC
 `;
@@ -76,7 +86,8 @@ campaignRoutes.get("/campaigns/:id", requireAuth, async (req, res) => {
   }
 
   const { rows: campaignRows } = await pool.query(
-    `SELECT id, name, created_at, graphic_mime, sheet_data_rows, sheet_name_column, sheet_skipped_json
+    `SELECT id, name, created_at, graphic_mime, sheet_data_rows, sheet_name_column, sheet_skipped_json,
+       to_char(sent_at, 'YYYY-MM-DD') AS sent_at
      FROM campaigns WHERE id = $1`,
     [campaignId]
   );
@@ -101,6 +112,8 @@ campaignRoutes.get("/campaigns/:id", requireAuth, async (req, res) => {
         details: JSON.parse(row.details_json || "{}"),
         createdAt: row.created_at,
         sheetRow: row.sheet_row,
+        contactKey: row.contact_key || "",
+        devices: new Set(),
         linksById: new Map(),
       });
     }
@@ -115,6 +128,7 @@ campaignRoutes.get("/campaigns/:id", requireAuth, async (req, res) => {
     }
     if (row.scanned_at) {
       person.linksById.get(row.link_id).scans.push(row.scanned_at);
+      person.devices.add(row.device);
     }
   }
 
@@ -136,6 +150,10 @@ campaignRoutes.get("/campaigns/:id", requireAuth, async (req, res) => {
       details: p.details,
       createdAt: p.createdAt,
       sheetRow: p.sheetRow,
+      contactKey: p.contactKey,
+      // Different phones that scanned this person's QR codes; 2+ usually means the letter
+      // was forwarded or shared.
+      devices: p.devices.size,
       links,
       scanCount,
       lastScannedAt,
@@ -155,6 +173,7 @@ campaignRoutes.get("/campaigns/:id", requireAuth, async (req, res) => {
       id: campaign.id,
       name: campaign.name,
       createdAt: campaign.created_at,
+      sentAt: campaign.sent_at, // "YYYY-MM-DD" or null
       hasLetters: Boolean(campaign.graphic_mime),
       // Campaigns created before the Excel check was added have no sheet stats (null).
       sheet:
@@ -182,14 +201,23 @@ campaignRoutes.patch("/campaigns/:id", requireAuth, async (req, res) => {
   if (!Number.isInteger(campaignId)) {
     return res.status(400).json({ error: "Invalid campaign id" });
   }
-  const { name } = req.body || {};
-  if (!name || !name.trim()) {
-    return res.status(400).json({ error: "name cannot be empty" });
+  const { name, sentAt } = req.body || {};
+  const fields = [];
+  const values = [];
+  if (name !== undefined) {
+    if (!name || !name.trim()) return res.status(400).json({ error: "name cannot be empty" });
+    values.push(name.trim());
+    fields.push(`name = $${values.length}`);
   }
-  const result = await pool.query("UPDATE campaigns SET name = $1 WHERE id = $2", [
-    name.trim(),
-    campaignId,
-  ]);
+  if (sentAt !== undefined) {
+    // "YYYY-MM-DD", or null/"" to clear it.
+    if (sentAt && !/^\d{4}-\d{2}-\d{2}$/.test(sentAt)) return res.status(400).json({ error: "sentAt must be a date" });
+    values.push(sentAt || null);
+    fields.push(`sent_at = $${values.length}`);
+  }
+  if (!fields.length) return res.status(400).json({ error: "Nothing to update" });
+  values.push(campaignId);
+  const result = await pool.query(`UPDATE campaigns SET ${fields.join(", ")} WHERE id = $${values.length}`, values);
   if (result.rowCount === 0) {
     return res.status(404).json({ error: "Campaign not found" });
   }

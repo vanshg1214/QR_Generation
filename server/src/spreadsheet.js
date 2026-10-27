@@ -42,7 +42,7 @@ export function analyzePeopleSheet(buffer) {
   const workbook = XLSX.read(buffer, { type: "buffer" });
   const sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
-  const empty = { sheetName, headerRow: null, nameColumn: null, columns: [], dataRows: 0, people: [], skipped: [] };
+  const empty = { sheetName, headerRow: null, nameColumn: null, contactColumn: null, peopleWithContact: 0, columns: [], dataRows: 0, people: [], skipped: [] };
   if (!sheet || !sheet["!ref"]) return empty;
   // blankrows: true keeps grid index -> Excel row number exact (first row of the used range + i).
   const firstRow = XLSX.utils.decode_range(sheet["!ref"]).s.r + 1;
@@ -98,9 +98,12 @@ export function analyzePeopleSheet(buffer) {
     }
   });
 
+  const contact = contactColumns(columns.map((c) => c.key));
   return {
     sheetName,
     headerRow: firstRow + headerIdx,
+    contactColumn: [...contact.email, ...contact.phone][0] || null,
+    peopleWithContact: people.filter((p) => contactKey(p.details)).length,
     nameColumn: nameCol.key,
     columns: columns.map((c) => c.key),
     dataRows,
@@ -119,6 +122,39 @@ export function repeatedNames(people) {
   }
   return [...byName.values()].filter((g) => g.rows.length > 1);
 }
+
+// ---- Recognising the same person across campaigns --------------------------------------
+// From a phone or email column: the same mobile number or email in two sheets is the same
+// person, however their name is written.
+const EMAIL_HEADING = /^(e ?mail|email id|email address|mail|mail id)$/;
+const PHONE_HEADING = /^(phone|phone no|phone number|mobile|mobile no|mobile number|cell|contact no|contact number|whatsapp|whatsapp no|whatsapp number|tel|telephone)$/;
+const EMAIL_VALUE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function contactColumns(columnKeys) {
+  const norm = (k) => normalizeHeading(k).replace(/ (\d+)$/, "");
+  return {
+    email: columnKeys.filter((k) => EMAIL_HEADING.test(norm(k))),
+    phone: columnKeys.filter((k) => PHONE_HEADING.test(norm(k))),
+  };
+}
+
+// "e:name@example.com", "p:9876543210" (last 10 digits of an Indian or other number), or "".
+export function contactKey(details) {
+  const keys = Object.keys(details || {});
+  const { email, phone } = contactColumns(keys);
+  for (const k of email) {
+    const v = cellText(details[k]).toLowerCase();
+    if (EMAIL_VALUE.test(v)) return `e:${v}`;
+  }
+  for (const k of phone) {
+    const digits = cellText(details[k]).replace(/\D/g, "");
+    if (digits.length >= 10) return `p:${digits.slice(-10)}`;
+  }
+  return "";
+}
+
+// What a contact key shows as: the email, or the phone number.
+export const contactLabel = (key) => (key ? key.slice(2) : "");
 
 // [{ name, details }] -- one entry per letter, in sheet order.
 export function parsePeopleSheet(buffer) {

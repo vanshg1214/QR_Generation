@@ -5,11 +5,14 @@ import { goBack, navigate } from "../router.jsx";
 import { downloadCampaignZip } from "../lib/downloads.js";
 import PeopleTable from "./PeopleTable.jsx";
 import CampaignCharts from "./CampaignCharts.jsx";
+import ActivityFeed from "./ActivityFeed.jsx";
+import { todayAndYesterday } from "../../../server/src/analytics.js";
 import { Stat } from "./CampaignsList.jsx";
 import { IconUsers, IconLink, IconEye, IconScan, IconArrowLeft, IconTrash, IconDownload } from "./icons.jsx";
 
 const TABS = [
   { key: "overview", label: "Overview" },
+  { key: "activity", label: "Activity" },
   { key: "people", label: "People" },
   { key: "links", label: "Links" },
   { key: "settings", label: "Settings" },
@@ -131,6 +134,9 @@ export default function CampaignDetail({ campaignId, tab }) {
   const [nameDraft, setNameDraft] = useState("");
   const [savingName, setSavingName] = useState(false);
   const [targetPerson, setTargetPerson] = useState(null);
+  const [peopleFilter, setPeopleFilter] = useState("all");
+  const [sentDraft, setSentDraft] = useState("");
+  const [savingSent, setSavingSent] = useState(false);
 
   const refresh = useCallback(() => {
     setLoading(true);
@@ -142,6 +148,7 @@ export default function CampaignDetail({ campaignId, tab }) {
         setPeople(data.people);
         setSummary(data.summary);
         setNameDraft(data.campaign.name);
+        setSentDraft(data.campaign.sentAt || "");
         setLoadError("");
       })
       .catch((err) => setLoadError(err.message))
@@ -166,6 +173,20 @@ export default function CampaignDetail({ campaignId, tab }) {
       toast.error(err.message);
     } finally {
       setSavingName(false);
+    }
+  }
+
+  async function saveSentDate(e) {
+    e.preventDefault();
+    setSavingSent(true);
+    try {
+      await api.updateCampaign(campaignId, { sentAt: sentDraft || null });
+      toast.success(sentDraft ? "Sent date saved." : "Sent date cleared.");
+      refresh();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setSavingSent(false);
     }
   }
 
@@ -204,6 +225,7 @@ export default function CampaignDetail({ campaignId, tab }) {
   }
 
   const viewRate = summary.totalPeople ? Math.round((summary.totalViewed / summary.totalPeople) * 100) : 0;
+  const today = todayAndYesterday(people);
 
   return (
     <>
@@ -230,8 +252,18 @@ export default function CampaignDetail({ campaignId, tab }) {
 
       <div className="stats-row">
         <Stat icon={<IconUsers />} value={summary.totalPeople} label="People (letters)" />
-        <Stat icon={<IconEye />} value={summary.totalViewed} label={`Viewed · ${viewRate}%`} />
-        <Stat icon={<IconScan />} value={summary.totalScans} label="Total scans" />
+        <Stat
+          icon={<IconEye />}
+          value={summary.totalViewed}
+          label={`Viewed · ${viewRate}%`}
+          delta={today.newToday ? `+${today.newToday} today` : null}
+        />
+        <Stat
+          icon={<IconScan />}
+          value={summary.totalScans}
+          label={`Total scans · yesterday ${today.scansYesterday}`}
+          delta={today.scansToday ? `+${today.scansToday} today` : null}
+        />
         <Stat icon={<IconLink />} value={summary.totalLinks} label="Links" />
       </div>
 
@@ -243,7 +275,10 @@ export default function CampaignDetail({ campaignId, tab }) {
             aria-selected={activeTab === t.key}
             className={`tab-button ${activeTab === t.key ? "active" : ""}`}
             onClick={() => {
-              if (t.key === "people") setTargetPerson(null);
+              if (t.key === "people") {
+                setTargetPerson(null);
+                setPeopleFilter("all");
+              }
               openTab(t.key);
             }}
           >
@@ -259,20 +294,31 @@ export default function CampaignDetail({ campaignId, tab }) {
         <>
           <SheetCheckCard campaign={campaign} summary={summary} />
           <CampaignCharts
+            campaign={campaign}
             people={people}
             summary={summary}
             links={links}
             onPersonClick={(p) => {
               setTargetPerson(p);
+              setPeopleFilter("all");
               openTab("people");
             }}
+            onFilterPeople={(f) => {
+              setTargetPerson(null);
+              setPeopleFilter(f);
+              openTab("people");
+            }}
+            onSetSentDate={() => openTab("settings")}
           />
         </>
       )}
 
+      {activeTab === "activity" && <ActivityFeed campaignId={campaignId} title="Scan activity" />}
+
       {activeTab === "people" && (
         <PeopleTable
-          key={targetPerson?.id ?? "all"}
+          key={`${targetPerson?.id ?? "all"}:${peopleFilter}`}
+          initialFilter={peopleFilter}
           people={people}
           initialSearch={targetPerson ? targetPerson.name : ""}
           initialExpandedId={targetPerson ? targetPerson.id : null}
@@ -301,6 +347,24 @@ export default function CampaignDetail({ campaignId, tab }) {
               <button type="submit" disabled={savingName || nameDraft.trim() === campaign.name}>
                 {savingName ? "Saving…" : "Save"}
               </button>
+            </form>
+          </section>
+          <section className="card">
+            <h2>Letters sent on</h2>
+            <p className="muted">
+              The day the letters were posted or handed out. Used for "days from sending to first scan" and the funnel.
+              Until it's set, the day the campaign was created is used.
+            </p>
+            <form className="inline-form" onSubmit={saveSentDate}>
+              <input type="date" value={sentDraft} onChange={(e) => setSentDraft(e.target.value)} aria-label="Letters sent on" />
+              <button type="submit" disabled={savingSent || sentDraft === (campaign.sentAt || "")}>
+                {savingSent ? "Saving…" : "Save"}
+              </button>
+              {campaign.sentAt && (
+                <button type="button" className="secondary" onClick={() => setSentDraft("")} disabled={savingSent}>
+                  Clear
+                </button>
+              )}
             </form>
           </section>
           <section className="card danger-card">

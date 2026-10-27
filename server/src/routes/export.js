@@ -1,9 +1,12 @@
-import { Router } from "express";
+import { asyncRouter } from "../asyncRouter.js";
 import ExcelJS from "exceljs";
 import { pool } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { INTEREST_LABELS, dayDiff, interestLevel, istDayKey, startDayKey, TIME_ZONE } from "../analytics.js";
 
-export const exportRoutes = Router();
+const istTime = (t) => new Date(t).toLocaleString("en-IN", { timeZone: TIME_ZONE });
+
+export const exportRoutes = asyncRouter();
 
 async function buildLinkRows(campaignId) {
   const { rows } = await pool.query(
@@ -26,20 +29,34 @@ async function buildPeopleRows(campaignId, publicBaseUrl) {
         cl.position,
         co.code,
         COUNT(s.id)::int AS scan_count,
-        MAX(s.scanned_at) AS last_scanned_at
+        MAX(s.scanned_at) AS last_scanned_at,
+        COALESCE(json_agg(s.scanned_at ORDER BY s.scanned_at) FILTER (WHERE s.id IS NOT NULL), '[]') AS scan_times,
+        COUNT(DISTINCT md5(COALESCE(s.ip_hash, '') || COALESCE(s.user_agent, ''))) FILTER (WHERE s.id IS NOT NULL)::int AS devices,
+        c.created_at AS campaign_created_at,
+        to_char(c.sent_at, 'YYYY-MM-DD') AS sent_at
       FROM people p
       JOIN campaigns c ON c.id = p.campaign_id
       JOIN codes co ON co.person_id = p.id
       JOIN campaign_links cl ON cl.id = co.campaign_link_id
-      LEFT JOIN scans s ON s.code_id = co.id
+      LEFT JOIN scans s ON s.code_id = co.id AND NOT s.is_bot
       WHERE p.campaign_id = $1
-      GROUP BY c.name, p.id, p.name, p.details_json, p.created_at, cl.id, cl.label, cl.position, co.code
-      ORDER BY LOWER(p.name) ASC, cl.position ASC
+      GROUP BY c.name, c.created_at, c.sent_at, p.id, p.name, p.details_json, p.created_at, cl.id, cl.label, cl.position, co.code
+      ORDER BY p.id ASC, cl.position ASC
     `,
     [campaignId]
   );
 
+  // Interest level and first scan are per person (all their links together).
+  const byPerson = new Map();
+  for (const row of rows) {
+    if (!byPerson.has(row.person_id)) byPerson.set(row.person_id, { links: [] });
+    byPerson.get(row.person_id).links.push({ scans: row.scan_times });
+  }
+
   return rows.map((row) => {
+    const person = byPerson.get(row.person_id);
+    const times = person.links.flatMap((l) => l.scans).sort();
+    const sentKey = startDayKey({ sentAt: row.sent_at, createdAt: row.campaign_created_at });
     const details = JSON.parse(row.details_json || "{}");
     for (const key of Object.keys(details)) {
       const trimmed = key.trim().toLowerCase();
@@ -56,8 +73,12 @@ async function buildPeopleRows(campaignId, publicBaseUrl) {
       qrCode: { text: "View QR", hyperlink: `${publicBaseUrl}/qr/${row.code}.png` },
       viewed: row.scan_count > 0 ? "Yes" : "No",
       scanCount: row.scan_count,
-      lastScannedAt: row.last_scanned_at ? new Date(row.last_scanned_at).toLocaleString() : "",
-      uploadedAt: row.created_at ? new Date(row.created_at).toLocaleString() : "",
+      interest: INTEREST_LABELS[interestLevel(person)],
+      devices: row.devices,
+      firstScannedAt: times.length ? istTime(times[0]) : "",
+      daysToFirstScan: times.length ? Math.max(0, dayDiff(istDayKey(times[0]), sentKey)) : "",
+      lastScannedAt: row.last_scanned_at ? istTime(row.last_scanned_at) : "",
+      uploadedAt: row.created_at ? istTime(row.created_at) : "",
     };
   });
 }
@@ -71,7 +92,7 @@ async function buildScanLog(campaignId) {
       JOIN codes co ON co.id = s.code_id
       JOIN people p ON p.id = co.person_id
       JOIN campaign_links cl ON cl.id = co.campaign_link_id
-      WHERE p.campaign_id = $1
+      WHERE p.campaign_id = $1 AND NOT s.is_bot
       ORDER BY s.scanned_at DESC
     `,
     [campaignId]
@@ -79,7 +100,7 @@ async function buildScanLog(campaignId) {
   return rows.map((row) => ({
     name: row.person_name,
     link: row.link_label,
-    scannedAt: new Date(row.scanned_at).toLocaleString(),
+    scannedAt: istTime(row.scanned_at),
   }));
 }
 
@@ -96,7 +117,11 @@ const COLUMN_LABELS = {
   qrCode: "QR Code",
   viewed: "Viewed",
   scanCount: "Scan Count",
-  lastScannedAt: "Last Scanned",
+  interest: "Interest",
+  devices: "Phones That Scanned",
+  firstScannedAt: "First Scanned (IST)",
+  daysToFirstScan: "Days To First Scan",
+  lastScannedAt: "Last Scanned (IST)",
   uploadedAt: "Uploaded At",
 };
 
@@ -134,7 +159,7 @@ exportRoutes.get("/campaigns/:id/export.xlsx", requireAuth, async (req, res) => 
     { metric: "Total Viewed (any link)", value: totalViewed },
     { metric: "View Rate (%)", value: viewRate },
     { metric: "Total Scans (all links, all-time)", value: totalScans },
-    { metric: "Report Generated At", value: new Date().toLocaleString() },
+    { metric: "Report Generated At (IST)", value: istTime(Date.now()) },
   ]);
   summarySheet.getColumn("metric").font = { bold: true };
 
@@ -165,7 +190,7 @@ exportRoutes.get("/campaigns/:id/export.xlsx", requireAuth, async (req, res) => 
   scanLogSheet.columns = [
     { header: "Name", key: "name", width: 28 },
     { header: "Link", key: "link", width: 20 },
-    { header: "Scanned At", key: "scannedAt", width: 24 },
+    { header: "Scanned At (IST)", key: "scannedAt", width: 24 },
   ];
   scanLogSheet.getRow(1).font = { bold: true };
   scanLog.forEach((row) => scanLogSheet.addRow(row));
