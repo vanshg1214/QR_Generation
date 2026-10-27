@@ -32,6 +32,8 @@ if (allowedOrigins.length) {
     cors({
       origin: allowedOrigins,
       credentials: true,
+      // Read by the dashboard after generating, to confirm the counts.
+      exposedHeaders: ["X-Campaign-Id", "X-People-Count", "X-Letter-Pages"],
     })
   );
 }

@@ -60,8 +60,11 @@ export default function LetterGraphicCalibrator({
   selectedText,
   onSelectText,
   previewName,
+  previewPeople, // [{ row, name }] from the Excel, to flip through the real letters
+  previewIndex,
+  onPreviewIndexChange,
   onColorSampler, // receives a function box -> suggested { nameColor, captionColor }
-  children, // the text style editor, shown above the page
+  children, // page contents + text style controls, shown in the side panel
 }) {
   const [imageUrl, setImageUrl] = useState(null);
   const [imageSize, setImageSize] = useState(null);
@@ -227,60 +230,92 @@ export default function LetterGraphicCalibrator({
   const textClass = (t, extra = "") =>
     `page-text${selectedText === t.key ? " is-selected" : ""}${extra ? ` ${extra}` : ""}`;
 
+  const peopleCount = previewPeople?.length || 0;
+  const flip = (delta) => onPreviewIndexChange?.((previewIndex + delta + peopleCount) % peopleCount);
+  const longestIndex = peopleCount
+    ? previewPeople.reduce((best, p, i) => (p.name.length > previewPeople[best].name.length ? i : best), 0)
+    : -1;
+
   return (
-    <div className="qr-calibrator">
-      <div className="qr-calibrator-header">
-        <div>
-          <strong>Page preview: this is exactly how each printed page will look</strong>
-          <p className="muted small" style={{ margin: "2px 0 0" }}>
+    <div className="design-studio">
+      <aside className="design-panel">
+        {children}
+
+        <section className="design-section">
+          <h3>QR codes</h3>
+          <p className="muted small">
             {detecting
               ? "Scanning the graphic for blank areas…"
               : boxes.length
-              ? "Drag a QR box to move it, use its bottom-right handle to resize, and pick its link. Click any text to style it."
-              : "No blank areas were detected — use \"Add box\" to place a QR code."}
+              ? `${boxes.length} QR ${boxes.length === 1 ? "box" : "boxes"} on the page. Drag a box to move it, drag its corner dot to resize, and pick which link it opens.`
+              : 'No blank area was found automatically. Use "Add QR box" to place one.'}
           </p>
-        </div>
-        <div className="qr-calibrator-actions">
-          <button type="button" className="secondary" onClick={addBox}>
-            + Add box
-          </button>
-          <button type="button" className="secondary" onClick={redetect} disabled={detecting}>
-            Re-detect
-          </button>
-        </div>
-      </div>
+          <div className="button-row">
+            <button type="button" className="secondary small-button" onClick={addBox}>
+              + Add QR box
+            </button>
+            <button type="button" className="secondary small-button" onClick={redetect} disabled={detecting}>
+              Find blank areas again
+            </button>
+          </div>
+        </section>
 
-      {includeGreeting && (
-        <div className="greeting-pos-row">
-          <span className="muted">Greeting position:</span>
-          <label>
-            <input type="radio" name="greetingPos" checked={greetingPos === null} onChange={() => onGreetingPosChange(null)} />
-            Above graphic
-          </label>
-          <label>
-            <input
-              type="radio"
-              name="greetingPos"
-              checked={greetingPos !== null}
-              onChange={() => onGreetingPosChange({ x: DEFAULT_GREETING_X, y: DEFAULT_GREETING_Y })}
-            />
-            Inside graphic (drag it)
-          </label>
+        {includeGreeting && (
+          <section className="design-section">
+            <h3>Greeting position</h3>
+            <div className="greeting-pos-row">
+              <label>
+                <input type="radio" name="greetingPos" checked={greetingPos === null} onChange={() => onGreetingPosChange(null)} />
+                Above the graphic
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="greetingPos"
+                  checked={greetingPos !== null}
+                  onChange={() => onGreetingPosChange({ x: DEFAULT_GREETING_X, y: DEFAULT_GREETING_Y })}
+                />
+                On the graphic (drag it on the page)
+              </label>
+            </div>
+          </section>
+        )}
+      </aside>
+
+      <div className="design-preview">
+        <div className="design-preview-bar">
+          <strong className="design-preview-title">Live page preview</strong>
+          {peopleCount > 0 ? (
+            <div className="preview-person">
+              <button type="button" className="secondary icon-button" onClick={() => flip(-1)} aria-label="Previous letter">
+                ‹
+              </button>
+              <select value={previewIndex} onChange={(e) => onPreviewIndexChange(Number(e.target.value))} aria-label="Preview the letter for">
+                {previewPeople.map((p, i) => (
+                  <option key={p.row} value={i}>
+                    {i + 1}. {p.name}
+                  </option>
+                ))}
+              </select>
+              <button type="button" className="secondary icon-button" onClick={() => flip(1)} aria-label="Next letter">
+                ›
+              </button>
+              {longestIndex >= 0 && longestIndex !== previewIndex && (
+                <button
+                  type="button"
+                  className="secondary small-button"
+                  onClick={() => onPreviewIndexChange(longestIndex)}
+                  title="Check the longest name still fits"
+                >
+                  Longest name
+                </button>
+              )}
+            </div>
+          ) : null}
         </div>
-      )}
-
-      {children}
-
-      {layout ? (
-        <div
-          className="letter-page-frame"
-          // Keep the whole page visible on screen, however tall it is.
-          style={{ maxWidth: `min(100%, calc(75vh * ${layout.pageWidth / layout.pageHeight}))` }}
-        >
-          <div
-            className="letter-page"
-            style={{ aspectRatio: `${layout.pageWidth} / ${layout.pageHeight}` }}
-          >
+        {layout ? (
+          <div className="letter-page-frame" style={{ "--page-ratio": layout.pageWidth / layout.pageHeight }}>
+            <div className="letter-page" style={{ aspectRatio: `${layout.pageWidth} / ${layout.pageHeight}` }}>
             <div
               className="qr-calibrator-canvas"
               ref={graphicRef}
@@ -380,9 +415,12 @@ export default function LetterGraphicCalibrator({
       ) : (
         <p className="muted small">Loading preview…</p>
       )}
-      <p className="muted small" style={{ margin: 0 }}>
-        Preview uses the sample name "{previewName}". Each real page gets that person's own name and QR code.
-      </p>
+        <p className="muted small design-preview-note">
+          {peopleCount
+            ? `Letter ${previewIndex + 1} of ${peopleCount}, exactly as it will print. Click any text to style it.`
+            : `Shown with the sample name "${previewName}". Click any text to style it.`}
+        </p>
+      </div>
     </div>
   );
 }

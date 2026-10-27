@@ -3,11 +3,19 @@ import { pool } from "../db.js";
 import { requireAuth } from "../auth.js";
 import QRCode from "qrcode";
 import archiver from "archiver";
-import { failZip, sanitizeFilename, uniqueNamer } from "../zipStream.js";
+import { failZip, sanitizeFilename, uniqueNamer, verifyZipContents } from "../zipStream.js";
 import { createLetterBook, saveLetterBook, addPersonLetter } from "../letters.js";
 import { resolveTextStyles } from "../textStyles.js";
 
 export const campaignRoutes = Router();
+
+function safeJson(text, fallback) {
+  try {
+    return text ? JSON.parse(text) : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 const CAMPAIGNS_LIST_QUERY = `
   SELECT
@@ -49,7 +57,7 @@ campaignRoutes.get("/campaigns", requireAuth, async (req, res) => {
 
 const CAMPAIGN_PEOPLE_QUERY = `
   SELECT
-    p.id AS person_id, p.name, p.details_json, p.created_at,
+    p.id AS person_id, p.name, p.details_json, p.created_at, p.sheet_row,
     cl.id AS link_id, cl.label, cl.position,
     co.code,
     s.scanned_at
@@ -58,7 +66,7 @@ const CAMPAIGN_PEOPLE_QUERY = `
   JOIN campaign_links cl ON cl.id = co.campaign_link_id
   LEFT JOIN scans s ON s.code_id = co.id
   WHERE p.campaign_id = $1
-  ORDER BY LOWER(p.name) ASC, cl.position ASC, s.scanned_at ASC
+  ORDER BY p.id ASC, cl.position ASC, s.scanned_at ASC
 `;
 
 campaignRoutes.get("/campaigns/:id", requireAuth, async (req, res) => {
@@ -67,9 +75,11 @@ campaignRoutes.get("/campaigns/:id", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "Invalid campaign id" });
   }
 
-  const { rows: campaignRows } = await pool.query("SELECT * FROM campaigns WHERE id = $1", [
-    campaignId,
-  ]);
+  const { rows: campaignRows } = await pool.query(
+    `SELECT id, name, created_at, graphic_mime, sheet_data_rows, sheet_name_column, sheet_skipped_json
+     FROM campaigns WHERE id = $1`,
+    [campaignId]
+  );
   const campaign = campaignRows[0];
   if (!campaign) {
     return res.status(404).json({ error: "Campaign not found" });
@@ -90,6 +100,7 @@ campaignRoutes.get("/campaigns/:id", requireAuth, async (req, res) => {
         name: row.name,
         details: JSON.parse(row.details_json || "{}"),
         createdAt: row.created_at,
+        sheetRow: row.sheet_row,
         linksById: new Map(),
       });
     }
@@ -124,6 +135,7 @@ campaignRoutes.get("/campaigns/:id", requireAuth, async (req, res) => {
       name: p.name,
       details: p.details,
       createdAt: p.createdAt,
+      sheetRow: p.sheetRow,
       links,
       scanCount,
       lastScannedAt,
@@ -143,6 +155,16 @@ campaignRoutes.get("/campaigns/:id", requireAuth, async (req, res) => {
       id: campaign.id,
       name: campaign.name,
       createdAt: campaign.created_at,
+      hasLetters: Boolean(campaign.graphic_mime),
+      // Campaigns created before the Excel check was added have no sheet stats (null).
+      sheet:
+        campaign.sheet_data_rows == null
+          ? null
+          : {
+              dataRows: campaign.sheet_data_rows,
+              nameColumn: campaign.sheet_name_column,
+              skipped: safeJson(campaign.sheet_skipped_json, []),
+            },
     },
     links: linkRows.map((l) => ({
       id: l.id,
@@ -297,6 +319,12 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
       .links.push({ label: row.link_label, code: row.code, campaignLinkId: row.campaign_link_id });
   }
 
+  const { rows: linkCountRows } = await pool.query(
+    "SELECT COUNT(*)::int AS n FROM campaign_links WHERE campaign_id = $1",
+    [campaignId]
+  );
+  const linkCount = linkCountRows[0].n;
+
   const archive = archiver("zip", { zlib: { level: 1 } });
   archive.on("error", (err) => failZip(res, archive, err));
 
@@ -339,9 +367,12 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
       }
     }
 
+    verifyZipContents({ book, people: byPerson.size, links: linkCount, qrFiles, personFolders });
     const combinedBytes = book ? await saveLetterBook(book) : null;
 
     res.setHeader("Content-Type", "application/zip");
+    res.setHeader("X-People-Count", String(byPerson.size));
+    res.setHeader("X-Letter-Pages", String(book ? book.pdfDoc.getPageCount() : 0));
     res.setHeader("Content-Disposition", `attachment; filename="${sanitizeFilename(campaignName)}-qr-codes.zip"`);
     archive.pipe(res);
 

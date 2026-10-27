@@ -1,22 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
-import { api, downloadBlob } from "../api.js";
-import Logo from "./Logo.jsx";
-import CreateCampaignPanel from "./CreateCampaignPanel.jsx";
+import { api } from "../api.js";
+import { Link, navigate } from "../router.jsx";
+import { downloadCampaignZip } from "../lib/downloads.js";
 import { IconUsers, IconEye, IconScan, IconPlus, IconLayers, IconInbox, IconTrash, IconDownload } from "./icons.jsx";
 
 function formatDate(value) {
   if (!value) return "—";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString();
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
-export default function CampaignsList({ onSelectCampaign }) {
+const percent = (part, whole) => (whole ? `${Math.round((part / whole) * 100)}%` : "—");
+
+export default function CampaignsList({ hasDraft, onDiscardDraft }) {
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [showCreate, setShowCreate] = useState(false);
+  const [search, setSearch] = useState("");
 
   const refresh = useCallback(() => {
     setLoading(true);
@@ -39,23 +41,27 @@ export default function CampaignsList({ onSelectCampaign }) {
       campaigns.reduce(
         (acc, c) => ({
           people: acc.people + c.peopleCount,
-          links: acc.links + c.linkCount,
           viewed: acc.viewed + c.viewedCount,
           scans: acc.scans + c.totalScans,
         }),
-        { people: 0, links: 0, viewed: 0, scans: 0 }
+        { people: 0, viewed: 0, scans: 0 }
       ),
     [campaigns]
   );
 
-  function handleCreated() {
-    setShowCreate(false);
-    refresh();
-  }
+  const shown = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return term ? campaigns.filter((c) => c.name.toLowerCase().includes(term)) : campaigns;
+  }, [campaigns, search]);
 
   async function handleDelete(e, campaign) {
-    e.stopPropagation(); // don't navigate into the campaign
-    if (!window.confirm(`Delete campaign "${campaign.name}"? This will permanently remove all people, QR codes, and scan data. This cannot be undone.`)) return;
+    e.stopPropagation();
+    if (
+      !window.confirm(
+        `Delete campaign "${campaign.name}"? This permanently removes its ${campaign.peopleCount} people, their QR codes and all scan data. Printed QR codes will stop being tracked. This cannot be undone.`
+      )
+    )
+      return;
     const toastId = toast.loading(`Deleting "${campaign.name}"…`);
     try {
       await api.deleteCampaign(campaign.id);
@@ -66,150 +72,132 @@ export default function CampaignsList({ onSelectCampaign }) {
     }
   }
 
-  async function handleRedownload(e, campaign) {
+  function handleDownload(e, campaign) {
     e.stopPropagation();
-    const toastId = toast.loading(`Preparing QR zip for "${campaign.name}"…`);
-    try {
-      const blob = await api.downloadQrZip(campaign.id);
-      downloadBlob(blob, `${campaign.name.trim().replace(/[^a-z0-9]+/gi, "_")}-qr-codes.zip`);
-      toast.success("QR zip downloaded!", { id: toastId });
-    } catch (err) {
-      toast.error(err.message, { id: toastId });
-    }
+    downloadCampaignZip(campaign);
   }
+
+  const open = (c) => navigate(`/campaigns/${c.id}`);
 
   return (
     <>
-      <div className="topbar">
-        <div className="topbar-inner">
-          <Logo size="lg" tone="light" />
-          <span className="topbar-tagline">Bulk QR campaigns &amp; scan tracking</span>
+      <div className="page-header">
+        <div>
+          <span className="eyebrow">Dashboard</span>
+          <h1 className="page-title">Campaigns</h1>
+          <p className="page-subtitle">Every campaign, every letter and every scan in one place.</p>
         </div>
+        <Link to="/new" className="button-link">
+          <IconPlus width={16} height={16} />
+          {hasDraft ? "Continue draft" : "New campaign"}
+        </Link>
       </div>
 
-      <div className="dashboard">
-        <div className="hero">
-          <span className="eyebrow">Platform Overview</span>
-          <h2 className="hero-title">Every campaign, every scan, in one place</h2>
-          <p className="hero-subtitle">
-            Create a campaign, attach one or more trackable links, and generate a unique QR code
-            per person. LINK-2-QR logs exactly who scanned, which link, and when.
-          </p>
-        </div>
-
-        <div className="stats-row">
-          <div className="stat">
-            <span className="stat-icon"><IconLayers /></span>
-            <div>
-              <span className="stat-value">{campaigns.length}</span>
-              <span className="stat-label">Campaigns</span>
-            </div>
-          </div>
-          <div className="stat">
-            <span className="stat-icon"><IconUsers /></span>
-            <div>
-              <span className="stat-value">{totals.people}</span>
-              <span className="stat-label">People</span>
-            </div>
-          </div>
-          <div className="stat">
-            <span className="stat-icon"><IconEye /></span>
-            <div>
-              <span className="stat-value">{totals.viewed}</span>
-              <span className="stat-label">Viewed</span>
-            </div>
-          </div>
-          <div className="stat">
-            <span className="stat-icon"><IconScan /></span>
-            <div>
-              <span className="stat-value">{totals.scans}</span>
-              <span className="stat-label">Total Scans</span>
-            </div>
+      {hasDraft && (
+        <div className="notice notice-info">
+          <span>You have a campaign you haven't finished creating.</span>
+          <div className="button-row">
+            <Link to="/new" className="button-link small-button">
+              Continue
+            </Link>
+            <button
+              type="button"
+              className="secondary small-button"
+              onClick={() => window.confirm("Discard the unfinished campaign?") && onDiscardDraft()}
+            >
+              Discard
+            </button>
           </div>
         </div>
+      )}
 
-        {showCreate ? (
-          <CreateCampaignPanel onCreated={handleCreated} onCancel={() => setShowCreate(false)} />
-        ) : (
-          <section className="card">
-            <div className="section-header">
-              <div>
-                <span className="eyebrow">Get Started</span>
-                <h2>Launch a new campaign</h2>
-              </div>
-              <button onClick={() => setShowCreate(true)}>
-                <IconPlus style={{ marginRight: 6, verticalAlign: "-3px" }} />
-                New Campaign
-              </button>
-            </div>
-          </section>
-        )}
+      <div className="stats-row">
+        <Stat icon={<IconLayers />} value={campaigns.length} label="Campaigns" />
+        <Stat icon={<IconUsers />} value={totals.people} label="People (letters)" />
+        <Stat icon={<IconEye />} value={totals.viewed} label={`Viewed · ${percent(totals.viewed, totals.people)}`} />
+        <Stat icon={<IconScan />} value={totals.scans} label="Total scans" />
+      </div>
 
-        <section className="card">
-          <div className="table-header">
-            <h2>Campaigns ({campaigns.length})</h2>
+      <section className="card">
+        <div className="table-header">
+          <h2>All campaigns ({campaigns.length})</h2>
+          <div className="button-row">
+            {campaigns.length > 5 && (
+              <input type="search" placeholder="Search campaigns…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            )}
             <button className="secondary" onClick={refresh} disabled={loading}>
               {loading ? "Refreshing…" : "Refresh"}
             </button>
           </div>
-          {error && <p className="error-text">{error}</p>}
-          {campaigns.length === 0 && !loading ? (
-            <div className="empty-state">
-              <span className="empty-state-icon"><IconInbox width={26} height={26} /></span>
-              <strong>No campaigns yet</strong>
-              <p className="muted">Create your first campaign above to generate trackable QR codes.</p>
+        </div>
+        {error && <p className="error-text">{error}</p>}
+        {loading && !campaigns.length ? (
+          <p className="muted">Loading campaigns…</p>
+        ) : campaigns.length === 0 ? (
+          <div className="empty-state">
+            <span className="empty-state-icon">
+              <IconInbox width={26} height={26} />
+            </span>
+            <strong>No campaigns yet</strong>
+            <p className="muted">Create your first campaign to generate personalised letters with trackable QR codes.</p>
+            <Link to="/new" className="button-link">
+              <IconPlus width={16} height={16} /> New campaign
+            </Link>
+          </div>
+        ) : (
+          <div className="campaign-list">
+            <div className="campaign-list-head" aria-hidden="true">
+              <span>Campaign</span>
+              <span>People</span>
+              <span>Viewed</span>
+              <span>Scans</span>
+              <span>Links</span>
+              <span>Created</span>
+              <span />
             </div>
-          ) : (
-            <div className="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Campaign</th>
-                    <th>Links</th>
-                    <th>People</th>
-                    <th>Viewed</th>
-                    <th>Total Scans</th>
-                    <th>Created</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {campaigns.map((c) => (
-                    <tr key={c.id} className="clickable-row" onClick={() => onSelectCampaign(c.id)}>
-                      <td>{c.name}</td>
-                      <td>{c.linkCount}</td>
-                      <td>{c.peopleCount}</td>
-                      <td>{c.viewedCount}</td>
-                      <td>{c.totalScans}</td>
-                      <td>{formatDate(c.createdAt)}</td>
-                      <td>
-                        <div className="row-actions">
-                          <button
-                            className="icon-action-btn"
-                            title="Re-download QR codes zip"
-                            onClick={(e) => handleRedownload(e, c)}
-                          >
-                            <IconDownload width={15} height={15} />
-                          </button>
-                          <button
-                            className="icon-action-btn danger"
-                            title="Delete campaign"
-                            onClick={(e) => handleDelete(e, c)}
-                          >
-                            <IconTrash width={15} height={15} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        <p className="footer-note">LINK-2-QR — bulk QR campaigns &amp; scan tracking</p>
-      </div>
+            {shown.map((c) => (
+              <div
+                key={c.id}
+                className="campaign-row"
+                role="link"
+                tabIndex={0}
+                onClick={() => open(c)}
+                onKeyDown={(e) => e.key === "Enter" && open(c)}
+              >
+                <span className="campaign-row-name">{c.name}</span>
+                <span data-label="People">{c.peopleCount}</span>
+                <span data-label="Viewed">
+                  {c.viewedCount} <small className="muted">({percent(c.viewedCount, c.peopleCount)})</small>
+                </span>
+                <span data-label="Scans">{c.totalScans}</span>
+                <span data-label="Links">{c.linkCount}</span>
+                <span data-label="Created">{formatDate(c.createdAt)}</span>
+                <span className="row-actions">
+                  <button className="icon-action-btn" title="Download the zip again" aria-label="Download zip" onClick={(e) => handleDownload(e, c)}>
+                    <IconDownload width={15} height={15} />
+                  </button>
+                  <button className="icon-action-btn danger" title="Delete campaign" aria-label="Delete campaign" onClick={(e) => handleDelete(e, c)}>
+                    <IconTrash width={15} height={15} />
+                  </button>
+                </span>
+              </div>
+            ))}
+            {shown.length === 0 && <p className="muted">No campaign matches "{search}".</p>}
+          </div>
+        )}
+      </section>
     </>
+  );
+}
+
+export function Stat({ icon, value, label }) {
+  return (
+    <div className="stat">
+      <span className="stat-icon">{icon}</span>
+      <div>
+        <span className="stat-value">{value}</span>
+        <span className="stat-label">{label}</span>
+      </div>
+    </div>
   );
 }

@@ -5,7 +5,7 @@ export const API_BASE = import.meta.env.DEV ? "" : "https://qr-generation-ag74.o
 async function request(path, options = {}) {
   const res = await fetch(`${API_BASE}/api${path}`, {
     credentials: "include",
-    headers: options.body ? { "Content-Type": "application/json" } : undefined,
+    headers: options.body && !(options.body instanceof FormData) ? { "Content-Type": "application/json" } : undefined,
     ...options,
   });
   if (!res.ok) {
@@ -40,8 +40,15 @@ export const api = {
   deleteCampaign: (id) =>
     request(`/campaigns/${id}`, { method: "DELETE" }).then((r) => r.json()),
 
-  downloadQrZip: (id) =>
-    request(`/campaigns/${id}/download-qr.zip`).then((r) => r.blob()),
+  // The zip plus the counts the server checked it against.
+  downloadQrZip: (id) => request(`/campaigns/${id}/download-qr.zip`).then(zipResult),
+
+  // What an Excel file contains (rows, people, skipped rows, repeated names), before upload.
+  checkSheet(file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request("/sheet-check", { method: "POST", body: formData }).then((r) => r.json());
+  },
 
   async createCampaign({ campaignName, links, file, graphic, boxes, signatureName, signatureTitle, includeGreeting, greetingPos, padding, qrCaption, textStyles }) {
     const formData = new FormData();
@@ -72,9 +79,22 @@ export const api = {
       }
       throw new Error(message);
     }
-    return res.blob();
+    return zipResult(res);
   },
 };
+
+async function zipResult(res) {
+  const count = (name) => {
+    const v = res.headers.get(name);
+    return v == null ? null : Number(v);
+  };
+  return {
+    blob: await res.blob(),
+    campaignId: count("X-Campaign-Id"),
+    peopleCount: count("X-People-Count"),
+    letterPages: count("X-Letter-Pages"),
+  };
+}
 
 export function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);

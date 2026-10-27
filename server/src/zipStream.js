@@ -29,3 +29,19 @@ export function uniqueNamer() {
     return name;
   };
 }
+
+// Last check before a zip is sent: one PDF page and one folder per person, one QR image
+// per person per link. Throws (so the user gets an error, not a wrong file) if not.
+export function verifyZipContents({ book, people, links, qrFiles, personFolders }) {
+  const problems = [];
+  if (book && book.pdfDoc.getPageCount() !== people) {
+    problems.push(`the PDF has ${book.pdfDoc.getPageCount()} pages for ${people} people`);
+  }
+  if (new Set(personFolders.map((f) => f.toLowerCase())).size !== people) {
+    problems.push(`${personFolders.length} folders for ${people} people`);
+  }
+  if (qrFiles.length !== people * links) {
+    problems.push(`${qrFiles.length} QR images for ${people} people x ${links} links`);
+  }
+  if (problems.length) throw new Error(`Download check failed: ${problems.join("; ")}`);
+}

@@ -1,12 +1,12 @@
 import { Router } from "express";
 import multer from "multer";
-import { parsePeopleSheet } from "../spreadsheet.js";
+import { analyzePeopleSheet, repeatedNames } from "../spreadsheet.js";
 import QRCode from "qrcode";
 import archiver from "archiver";
 import { customAlphabet } from "nanoid";
 import { withTransaction } from "../db.js";
 import { requireAuth } from "../auth.js";
-import { failZip, sanitizeFilename, uniqueNamer } from "../zipStream.js";
+import { failZip, uniqueNamer, verifyZipContents } from "../zipStream.js";
 import { createLetterBook, saveLetterBook, addPersonLetter } from "../letters.js";
 import { normalizeTextStyles } from "../textStyles.js";
 import { captionLines, MAX_CAPTION_LINES } from "../qrCaptionLayout.js";
@@ -40,6 +40,35 @@ async function generateUniqueCodes(client, count) {
   }
   return [...codes];
 }
+
+const MAX_SKIPPED_STORED = 500;
+
+// What the Excel file contains, checked before a campaign is created: how many rows, which
+// become letters, which are skipped and why, and which names repeat. The same parser is used
+// to create the campaign, so these numbers are exactly what gets generated.
+function sheetReport(analysis) {
+  return {
+    sheetName: analysis.sheetName,
+    headerRow: analysis.headerRow,
+    nameColumn: analysis.nameColumn,
+    dataRows: analysis.dataRows,
+    peopleCount: analysis.people.length,
+    people: analysis.people.map(({ row, name }) => ({ row, name })),
+    skipped: analysis.skipped,
+    repeated: repeatedNames(analysis.people),
+  };
+}
+
+uploadRoutes.post("/sheet-check", requireAuth, upload.single("file"), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+  let analysis;
+  try {
+    analysis = analyzePeopleSheet(req.file.buffer);
+  } catch (err) {
+    return res.status(400).json({ error: "Could not read the Excel file: " + err.message });
+  }
+  res.json(sheetReport(analysis));
+});
 
 uploadRoutes.post(
   "/upload",
@@ -164,21 +193,29 @@ uploadRoutes.post(
 
   const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
 
-  let sheetRows;
+  let analysis;
   try {
-    sheetRows = parsePeopleSheet(req.file.buffer);
+    analysis = analyzePeopleSheet(req.file.buffer);
   } catch (err) {
     return res.status(400).json({ error: "Could not read the Excel file: " + err.message });
   }
 
+  const sheetRows = analysis.people;
   if (!sheetRows.length) {
     return res.status(400).json({ error: "No rows had a usable Name value" });
   }
 
   const created = await withTransaction(async (client) => {
     const { rows: campaignRows } = await client.query(
-      "INSERT INTO campaigns (name, signature_name, signature_title, typography, include_greeting, greeting_pos_json, letter_padding, qr_caption_json, text_styles_json) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
-      [campaignName.trim(), signatureName, signatureTitle, typography, includeGreeting, greetingPos ? JSON.stringify(greetingPos) : null, padding, qrCaption ? JSON.stringify(qrCaption) : null, JSON.stringify(textStyles)]
+      `INSERT INTO campaigns (name, signature_name, signature_title, typography, include_greeting, greeting_pos_json,
+         letter_padding, qr_caption_json, text_styles_json, sheet_data_rows, sheet_name_column, sheet_skipped_json)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+      [
+        campaignName.trim(), signatureName, signatureTitle, typography, includeGreeting,
+        greetingPos ? JSON.stringify(greetingPos) : null, padding, qrCaption ? JSON.stringify(qrCaption) : null,
+        JSON.stringify(textStyles), analysis.dataRows, analysis.nameColumn,
+        JSON.stringify(analysis.skipped.slice(0, MAX_SKIPPED_STORED)),
+      ]
     );
     const campaignId = campaignRows[0].id;
 
@@ -217,9 +254,16 @@ uploadRoutes.post(
     );
     const personIds = idRows.map((r) => r.id);
     await client.query(
-      `INSERT INTO people (id, campaign_id, name, details_json)
-       SELECT id, $1, name, details FROM unnest($2::int[], $3::text[], $4::text[]) AS t(id, name, details)`,
-      [campaignId, personIds, sheetRows.map((r) => r.name), sheetRows.map((r) => JSON.stringify(r.details))]
+      `INSERT INTO people (id, campaign_id, name, details_json, sheet_row)
+       SELECT id, $1, name, details, sheet_row
+       FROM unnest($2::int[], $3::text[], $4::text[], $5::int[]) AS t(id, name, details, sheet_row)`,
+      [
+        campaignId,
+        personIds,
+        sheetRows.map((r) => r.name),
+        sheetRows.map((r) => JSON.stringify(r.details)),
+        sheetRows.map((r) => r.row),
+      ]
     );
 
     const allCodes = await generateUniqueCodes(client, sheetRows.length * linkRows.length);
@@ -287,10 +331,15 @@ uploadRoutes.post(
       }
     }
 
+    // Never hand out a print file that doesn't match the people list.
+    verifyZipContents({ book, people: created.people.length, links: links.length, qrFiles, personFolders });
     const combinedBytes = book ? await saveLetterBook(book) : null;
 
     res.setHeader("Content-Type", "application/zip");
     res.setHeader("Content-Disposition", `attachment; filename="qr-codes.zip"`);
+    res.setHeader("X-Campaign-Id", String(created.campaignId));
+    res.setHeader("X-People-Count", String(created.people.length));
+    res.setHeader("X-Letter-Pages", String(book ? book.pdfDoc.getPageCount() : 0));
     archive.pipe(res);
 
     for (const f of qrFiles) archive.append(f.data, { name: f.name });

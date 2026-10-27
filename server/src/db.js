@@ -108,6 +108,11 @@ export async function initSchema() {
   await pool.query("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS letter_padding BOOLEAN DEFAULT false");
   await pool.query("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS qr_caption_json TEXT");
   await pool.query("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS text_styles_json TEXT");
+  // What the uploaded Excel file contained (see spreadsheet.js analyzePeopleSheet).
+  await pool.query("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS sheet_data_rows INTEGER");
+  await pool.query("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS sheet_name_column TEXT");
+  await pool.query("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS sheet_skipped_json TEXT");
+  await pool.query("ALTER TABLE people ADD COLUMN IF NOT EXISTS sheet_row INTEGER");
 
   await migrateSingleLinkSchema();
 

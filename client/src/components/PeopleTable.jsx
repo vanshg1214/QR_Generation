@@ -9,7 +9,9 @@ function formatDate(value) {
 
 export default function PeopleTable({ people, initialSearch = "", initialExpandedId = null }) {
   const [search, setSearch] = useState(initialSearch);
-  const [sortKey, setSortKey] = useState("name");
+  // Campaigns that know each person's Excel row list them in sheet order by default.
+  const hasRows = people.some((p) => p.sheetRow != null);
+  const [sortKey, setSortKey] = useState(hasRows ? "sheetRow" : "name");
   const [sortDir, setSortDir] = useState("asc");
   const [expandedId, setExpandedId] = useState(initialExpandedId);
   const [currentPage, setCurrentPage] = useState(1);
@@ -46,6 +48,7 @@ export default function PeopleTable({ people, initialSearch = "", initialExpande
     const sorted = [...rows].sort((a, b) => {
       const valueOf = (row) => {
         if (sortKey === "name") return row.name.toLowerCase();
+        if (sortKey === "sheetRow") return row.sheetRow ?? 0;
         if (sortKey === "scanCount") return row.scanCount;
         if (sortKey === "lastScannedAt") return row.lastScannedAt || "";
         return (row.details[sortKey] || "").toString().toLowerCase();
@@ -75,12 +78,15 @@ export default function PeopleTable({ people, initialSearch = "", initialExpande
 
   const totalPages = Math.ceil(filtered.length / pageSize) || 1;
 
-  const columnCount = extraColumns.length + 5;
+  const columnCount = extraColumns.length + 5 + (hasRows ? 1 : 0);
+  const arrow = (key) => (sortKey === key ? (sortDir === "asc" ? " ↑" : " ↓") : "");
 
   return (
     <section className="card">
       <div className="table-header">
-        <h2>People ({filtered.length})</h2>
+        <h2>
+          People ({filtered.length === people.length ? people.length : `${filtered.length} of ${people.length}`})
+        </h2>
         <input
           type="search"
           placeholder="Search…"
@@ -93,15 +99,21 @@ export default function PeopleTable({ people, initialSearch = "", initialExpande
           <thead>
             <tr>
               <th></th>
-              <th onClick={() => toggleSort("name")} className="sortable">Name</th>
+              {hasRows && (
+                <th onClick={() => toggleSort("sheetRow")} className="sortable" title="Row number in the uploaded Excel">
+                  Excel row{arrow("sheetRow")}
+                </th>
+              )}
+              <th onClick={() => toggleSort("name")} className="sortable">Name{arrow("name")}</th>
               {extraColumns.map((col) => (
                 <th key={col} onClick={() => toggleSort(col)} className="sortable">
                   {col}
+                  {arrow(col)}
                 </th>
               ))}
               <th>Viewed</th>
-              <th onClick={() => toggleSort("scanCount")} className="sortable">Scan Count</th>
-              <th onClick={() => toggleSort("lastScannedAt")} className="sortable">Last Scanned</th>
+              <th onClick={() => toggleSort("scanCount")} className="sortable">Scans{arrow("scanCount")}</th>
+              <th onClick={() => toggleSort("lastScannedAt")} className="sortable">Last scanned{arrow("lastScannedAt")}</th>
             </tr>
           </thead>
           <tbody>
@@ -114,6 +126,7 @@ export default function PeopleTable({ people, initialSearch = "", initialExpande
                     onClick={() => setExpandedId(isExpanded ? null : p.id)}
                   >
                     <td className="expand-toggle">{isExpanded ? "▾" : "▸"}</td>
+                    {hasRows && <td className="muted">{p.sheetRow ?? "—"}</td>}
                     <td>{p.name}</td>
                     {extraColumns.map((col) => (
                       <td key={col}>{p.details[col] ?? ""}</td>
@@ -158,7 +171,7 @@ export default function PeopleTable({ people, initialSearch = "", initialExpande
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={columnCount} className="muted">
-                  No people yet — create a campaign above.
+                  {people.length ? `No one matches "${search}".` : "No people in this campaign."}
                 </td>
               </tr>
             )}
