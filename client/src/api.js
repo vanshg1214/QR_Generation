@@ -84,5 +84,6 @@ export function downloadBlob(blob, filename) {
   document.body.appendChild(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  // Revoking straight away can cancel the download in Safari/Firefox; give it time to start.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }

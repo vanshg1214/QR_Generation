@@ -271,12 +271,13 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
   const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
 
   const { rows } = await pool.query(
-    `SELECT p.name AS person_name, cl.label AS link_label, cl.id AS campaign_link_id, co.code
+    // Sheet order (p.id), the same order as the original download.
+    `SELECT p.id AS person_id, p.name AS person_name, cl.label AS link_label, cl.id AS campaign_link_id, co.code
      FROM codes co
      JOIN people p ON p.id = co.person_id
      JOIN campaign_links cl ON cl.id = co.campaign_link_id
      WHERE p.campaign_id = $1
-     ORDER BY LOWER(p.name) ASC, cl.position ASC`,
+     ORDER BY p.id ASC, cl.position ASC`,
     [campaignId]
   );
 
@@ -288,7 +289,8 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
     `SELECT lqb.campaign_link_id, lqb.x, lqb.y, lqb.width, lqb.height
      FROM letter_qr_boxes lqb
      JOIN campaign_links cl ON cl.id = lqb.campaign_link_id
-     WHERE cl.campaign_id = $1`,
+     WHERE cl.campaign_id = $1
+     ORDER BY lqb.id`,
     [campaignId]
   );
   const boxes = boxRows.map((r) => ({
@@ -299,13 +301,14 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
     height: r.height,
   }));
 
-  // Group by person
+  // Group by person id, not name: two people with the same name each get their own
+  // page and folder, exactly as in the original download.
   const byPerson = new Map();
   for (const row of rows) {
-    if (!byPerson.has(row.person_name)) byPerson.set(row.person_name, []);
+    if (!byPerson.has(row.person_id)) byPerson.set(row.person_id, { name: row.person_name, links: [] });
     byPerson
-      .get(row.person_name)
-      .push({ label: row.link_label, code: row.code, campaignLinkId: row.campaign_link_id });
+      .get(row.person_id)
+      .links.push({ label: row.link_label, code: row.code, campaignLinkId: row.campaign_link_id });
   }
 
   const archive = archiver("zip", { zlib: { level: 1 } });
@@ -322,7 +325,7 @@ campaignRoutes.get("/campaigns/:id/download-qr.zip", requireAuth, async (req, re
     const personFolders = [];
     const qrFiles = [];
     const personFolderName = uniqueNamer();
-    for (const [personName, links] of byPerson) {
+    for (const { name: personName, links } of byPerson.values()) {
       const folder = personFolderName(personName);
       personFolders.push(folder);
       const linkFileName = uniqueNamer();
