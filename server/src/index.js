@@ -7,7 +7,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { authRoutes } from "./routes/authRoutes.js";
-import { redirectRoutes } from "./routes/redirect.js";
+import { redirectRoutes, warmCodeCache } from "./routes/redirect.js";
 import { qrRoutes } from "./routes/qr.js";
 import { campaignRoutes } from "./routes/campaigns.js";
 import { uploadRoutes } from "./routes/upload.js";
@@ -89,7 +89,8 @@ app.use((err, req, res, next) => {
 const port = process.env.PORT || 4000;
 
 initSchema()
-  .then(() => {
+  .then(async () => {
+    await warmCodeCache().catch(() => {});
     app.listen(port, () => {
       console.log(`QR tracker server listening on port ${port}`);
     });

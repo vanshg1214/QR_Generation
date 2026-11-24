@@ -3,11 +3,10 @@
   "installCommand": "npm install",
   "buildCommand": "npm run build",
   "outputDirectory": "client/dist",
-  "redirects": [
+  "rewrites": [
     {
       "source": "/r/:code",
-      "destination": "https://qr-generation-ag74.onrender.com/r/:code",
-      "permanent": false
+      "destination": "https://qr-generation-ag74.onrender.com/r/:code"
     }
   ]
 }

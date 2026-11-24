@@ -6,6 +6,7 @@ import archiver from "archiver";
 import { failZip, sanitizeFilename, uniqueNamer, verifyZipContents } from "../zipStream.js";
 import { createLetterBook, saveLetterBook, addPersonLetter } from "../letters.js";
 import { resolveTextStyles } from "../textStyles.js";
+import { invalidateCodeCache } from "./redirect.js";
 
 export const campaignRoutes = asyncRouter();
 
@@ -262,6 +263,7 @@ campaignRoutes.patch("/campaigns/:id/links/:linkId", requireAuth, async (req, re
   if (result.rowCount === 0) {
     return res.status(404).json({ error: "Link not found" });
   }
+  invalidateCodeCache();
   res.json({ ok: true });
 });
 
@@ -274,6 +276,7 @@ campaignRoutes.delete("/campaigns/:id", requireAuth, async (req, res) => {
   if (result.rowCount === 0) {
     return res.status(404).json({ error: "Campaign not found" });
   }
+  invalidateCodeCache();
   res.json({ ok: true });
 });
 
