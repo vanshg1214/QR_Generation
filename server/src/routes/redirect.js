@@ -203,6 +203,26 @@ function renderRedirectPage(destinationUrl) {
 </html>`;
 }
 
+// Resolves the ultimate destination URL for intermediate tracking redirects
+// (e.g. `myvpv.com/q/l2q/:id?to=:path`) so mobile users skip the slow downstream
+// serverless cold-start hop while still triggering the tracking ping in the background.
+function resolveDirectDestination(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.includes("myvpv.com") && parsed.pathname.startsWith("/q/l2q")) {
+      const targetPath = parsed.searchParams.get("to") || "/";
+      const targetUrl = new URL(targetPath.startsWith("/") ? targetPath : "/" + targetPath, "https://myvpv.com");
+      for (const [key, val] of parsed.searchParams.entries()) {
+        if (key !== "to") {
+          targetUrl.searchParams.set(key, val);
+        }
+      }
+      return targetUrl.toString();
+    }
+  } catch {}
+  return url;
+}
+
 // Background scan recording (non-blocking: never delays the visitor's page transition)
 function recordScanAsync(codeId, userAgent, ip) {
   if (!codeId) return;
@@ -275,11 +295,27 @@ redirectRoutes.get("/r/:code", async (req, res) => {
     recordScanAsync(codeId, userAgent, req.ip);
   }
 
-  // 4. Send instant HTTP 302 redirect directly to destination
+  // 4. Resolve direct landing destination to skip slow downstream redirect hops
+  const directDestination = resolveDirectDestination(destination);
+
+  // If there was an intermediate tracking hop (e.g. /q/l2q/), trigger it in the
+  // background so the downstream system still logs the campaign visit
+  if (directDestination !== destination) {
+    fetch(destination, {
+      headers: {
+        "User-Agent": userAgent || "Mozilla/5.0 (compatible; QRTracker/1.0)",
+        "X-Forwarded-For": req.ip || "",
+      },
+    }).catch((err) => {
+      console.warn("Background downstream tracking ping failed:", err.message);
+    });
+  }
+
+  // 5. Send instant HTTP 302 redirect directly to the fast landing destination
   // Responds in ~50ms from in-memory cache so the mobile browser immediately
-  // switches its address bar away from Render to the destination website.
+  // switches its address bar away from Render to the final destination website.
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  return res.redirect(302, destination);
+  return res.redirect(302, directDestination);
 });
