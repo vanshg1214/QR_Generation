@@ -275,15 +275,11 @@ redirectRoutes.get("/r/:code", async (req, res) => {
     recordScanAsync(codeId, userAgent, req.ip);
   }
 
-  // 4. For bot crawlers (WhatsApp/Telegram/Slack previews), send standard 302
-  if (isBot) {
-    return res.redirect(302, destination);
-  }
-
-  // 5. For human phone browsers: return instant HTML page showing destination + immediate JS redirect
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  // 4. Send instant HTTP 302 redirect directly to destination
+  // Responds in ~50ms from in-memory cache so the mobile browser immediately
+  // switches its address bar away from Render to the destination website.
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  res.status(200).send(renderRedirectPage(destination));
+  return res.redirect(302, destination);
 });
