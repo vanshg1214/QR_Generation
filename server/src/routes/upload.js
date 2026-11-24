@@ -10,6 +10,7 @@ import { failZip, uniqueNamer, verifyZipContents } from "../zipStream.js";
 import { createLetterBook, saveLetterBook, addPersonLetter } from "../letters.js";
 import { normalizeTextStyles } from "../textStyles.js";
 import { captionLines, MAX_CAPTION_LINES } from "../qrCaptionLayout.js";
+import { cacheCode } from "./redirect.js";
 
 export const uploadRoutes = asyncRouter();
 
@@ -406,11 +407,18 @@ uploadRoutes.post(
       });
       return { name, codes };
     });
-    await client.query(
+    const { rows: insertedCodes } = await client.query(
       `INSERT INTO codes (person_id, campaign_link_id, code)
-       SELECT * FROM unnest($1::int[], $2::int[], $3::text[])`,
+       SELECT * FROM unnest($1::int[], $2::int[], $3::text[])
+       RETURNING id, code, campaign_link_id`,
       [codePersonIds, codeLinkIds, allCodes]
     );
+
+    const linkDestMap = new Map(linkRows.map((l) => [l.id, l.destination_url]));
+    for (const r of insertedCodes) {
+      cacheCode(r.code, r.id, linkDestMap.get(r.campaign_link_id), r.campaign_link_id, false);
+    }
+
     return { campaignId, people, resolvedBoxes };
   });
 

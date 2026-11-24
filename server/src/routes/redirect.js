@@ -48,7 +48,7 @@ export async function warmCodeCache() {
        FROM codes co
        JOIN campaign_links cl ON cl.id = co.campaign_link_id
        ORDER BY co.id DESC
-       LIMIT 10000`
+       LIMIT 50000`
     );
     for (const r of rows) {
       cacheCode(r.code, r.code_id, r.destination_url, r.campaign_link_id, false);
